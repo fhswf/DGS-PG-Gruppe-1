@@ -1,0 +1,7 @@
+# Base requirements for Label Studio ML Backend
+git+https://github.com/HumanSignal/label-studio-ml-backend.git
+uwsgi>=2.0.20
+redis>=4.0.0
+rq>=1.10.0
+flask>=2.0.0
+flask-cors>=3.0.0
