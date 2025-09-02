@@ -35,6 +35,10 @@ services:
       - BACKEND=onnxruntime
       - MODE=balanced
       - CONFIDENCE_THRESHOLD=0.3
+      # Cache configuration
+      - RTMLIB_HOME=/app/models/rtmlib_cache
+      - HUB_CACHE_DIR=/app/models/rtmlib_cache/hub
+      - TORCH_HOME=/app/models/torch_cache
     volumes:
       - ./data:/app/data:ro
       - ./data:/label-studio/data:ro
