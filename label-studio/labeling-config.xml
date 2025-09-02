@@ -1,14 +1,5 @@
-# Label Studio Configuration for Pose Estimation Skeleton
 <View>
   <Image name="image" value="$image" zoom="true" zoomBy="1.5" zoomControl="true"/>
-  
-  <!-- Skeleton visualization using polygons for connections -->
-  <PolygonLabels name="skeleton" toName="image" strokeWidth="2" pointSize="medium">
-    <Label value="body_skeleton" background="#FF6B6B" strokeColor="#FF6B6B"/>
-    <Label value="left_hand_skeleton" background="#00B894" strokeColor="#00B894"/>
-    <Label value="right_hand_skeleton" background="#E84393" strokeColor="#E84393"/>
-    <Label value="face_contour" background="#FDCB6E" strokeColor="#FDCB6E"/>
-  </PolygonLabels>
   
   <!-- Individual keypoints for detailed annotation -->
   <KeyPointLabels name="keypoints" toName="image" strokeWidth="2" pointSize="small" 

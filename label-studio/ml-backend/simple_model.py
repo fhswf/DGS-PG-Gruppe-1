@@ -39,18 +39,64 @@ class SimpleRTMLibBackend:
         self.mode = os.environ.get('MODE', 'balanced')
         self.confidence_threshold = float(os.environ.get('CONFIDENCE_THRESHOLD', '0.3'))
         
+        # Set up model cache directory
+        self.model_dir = os.environ.get('MODEL_DIR', '/app/models')
+        self._setup_model_cache()
+        
+        # Initialize keypoint labels first
+        self.keypoint_labels = self._get_keypoint_labels()
+        
         self.pose_estimator = None
         if RTMLIB_AVAILABLE:
             self._initialize_model()
         
-        # Keypoint labels for wholebody
-        self.keypoint_labels = self._get_keypoint_labels()
-        
         logger.info(f"Backend initialized: device={self.device}, mode={self.mode}")
+
+    def _setup_model_cache(self):
+        """Set up persistent model cache directory."""
+        try:
+            # Create cache directories
+            os.makedirs(self.model_dir, exist_ok=True)
+            cache_dir = os.path.join(self.model_dir, 'rtmlib_cache')
+            hub_dir = os.path.join(cache_dir, 'hub')
+            checkpoints_dir = os.path.join(hub_dir, 'checkpoints')
+            os.makedirs(checkpoints_dir, exist_ok=True)
+            
+            # Set RTMLib cache environment variables
+            os.environ['RTMLIB_HOME'] = cache_dir
+            os.environ['HUB_CACHE_DIR'] = hub_dir
+            
+            # Also set torch hub cache if available
+            torch_cache_dir = os.path.join(self.model_dir, 'torch_cache')
+            os.makedirs(torch_cache_dir, exist_ok=True)
+            os.environ['TORCH_HOME'] = torch_cache_dir
+            
+            # Check if models are already cached
+            cached_files = []
+            cache_paths = [
+                checkpoints_dir,  # our configured path
+                os.path.join(torch_cache_dir, 'hub', 'checkpoints'),  # torch hub path
+                os.path.expanduser('~/.cache/rtmlib/hub/checkpoints'),  # default rtmlib path
+            ]
+            
+            for cache_path in cache_paths:
+                if os.path.exists(cache_path):
+                    files = [f for f in os.listdir(cache_path) if f.endswith(('.onnx', '.zip'))]
+                    cached_files.extend(files)
+            
+            if cached_files:
+                logger.info(f"Found {len(cached_files)} cached model files")
+            else:
+                logger.info("No cached models found, will download on first use")
+            
+            logger.info(f"Model cache configured at: {cache_dir}")
+        except Exception as e:
+            logger.warning(f"Failed to setup model cache: {e}")
 
     def _initialize_model(self):
         """Initialize the RTMLib model."""
         try:
+            logger.info("Initializing RTMLib model with persistent cache...")
             self.pose_estimator = Wholebody(
                 to_openpose=False,
                 mode=self.mode,
@@ -58,13 +104,16 @@ class SimpleRTMLibBackend:
                 device=self.device
             )
             logger.info("RTMLib model initialized successfully")
+            
+            # Log expected keypoint count
+            logger.info(f"Expected keypoint labels: {len(self.keypoint_labels)}")
         except Exception as e:
             logger.error(f"Failed to initialize RTMLib model: {e}")
             self.pose_estimator = None
 
     def _get_keypoint_labels(self) -> List[str]:
-        """Get keypoint labels."""
-        # Simplified keypoint labels
+        """Get keypoint labels matching the labeling config."""
+        # Body keypoints (first 17)
         body_labels = [
             'nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear',
             'left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow',
@@ -72,78 +121,44 @@ class SimpleRTMLibBackend:
             'left_knee', 'right_knee', 'left_ankle', 'right_ankle'
         ]
         
-        # Add simplified additional keypoints to reach expected count
-        additional_labels = [f'keypoint_{i}' for i in range(17, 133)]
-        
-        return body_labels + additional_labels
-
-    def _get_skeleton_connections(self):
-        """Define skeleton connections for body pose."""
-        # Body skeleton connections (COCO format)
-        body_connections = [
-            # Head
-            (0, 1), (0, 2), (1, 3), (2, 4),  # nose-eyes, eyes-ears
-            # Torso
-            (5, 6), (5, 11), (6, 12), (11, 12),  # shoulders-hips
-            # Arms
-            (5, 7), (7, 9), (6, 8), (8, 10),  # shoulders-elbows-wrists
-            # Legs  
-            (11, 13), (13, 15), (12, 14), (14, 16),  # hips-knees-ankles
-            # Feet
-            (15, 17), (15, 18), (15, 19),  # left ankle-foot
-            (16, 20), (16, 21), (16, 22),  # right ankle-foot
+        # Foot keypoints (3 per foot = 6 total)
+        foot_labels = [
+            'left_big_toe', 'left_small_toe', 'left_heel',
+            'right_big_toe', 'right_small_toe', 'right_heel'
         ]
-        return body_connections
-
-    def _create_skeleton_polygon(self, keypoints, scores, image_width, image_height):
-        """Create skeleton polygon annotations from keypoints."""
-        connections = self._get_skeleton_connections()
-        skeleton_lines = []
         
-        for start_idx, end_idx in connections:
-            if (start_idx < len(keypoints) and end_idx < len(keypoints) and 
-                start_idx < len(scores) and end_idx < len(scores)):
-                
-                if scores[start_idx] > self.confidence_threshold and scores[end_idx] > self.confidence_threshold:
-                    start_point = keypoints[start_idx]
-                    end_point = keypoints[end_idx]
-                    
-                    # Convert to percentages
-                    start_x = (start_point[0] / image_width) * 100
-                    start_y = (start_point[1] / image_height) * 100
-                    end_x = (end_point[0] / image_width) * 100
-                    end_y = (end_point[1] / image_height) * 100
-                    
-                    skeleton_lines.extend([[start_x, start_y], [end_x, end_y]])
+        # Face keypoints (68 points)
+        face_labels = [f'face_{i}' for i in range(68)]
         
-        if len(skeleton_lines) > 0:
-            return {
-                "from_name": "skeleton",
-                "to_name": "image",
-                "type": "polygonlabels", 
-                "value": {
-                    "points": skeleton_lines,
-                    "polygonlabels": ["body_skeleton"]
-                }
-            }
-        return None
+        # Left hand keypoints (21 points)
+        left_hand_labels = [f'left_hand_{i}' for i in range(21)]
+        
+        # Right hand keypoints (21 points)
+        right_hand_labels = [f'right_hand_{i}' for i in range(21)]
+        
+        # Combine all labels: 17 + 6 + 68 + 21 + 21 = 133 total
+        all_labels = body_labels + foot_labels + face_labels + left_hand_labels + right_hand_labels
+        
+        return all_labels
 
     def _download_image(self, url: str, request_headers: dict = None) -> Optional[np.ndarray]:
         """Download image from URL."""
         try:
             # Handle relative URLs starting with /data/
             if url.startswith('/data/'):
-                # Try local file first (shared volume) - add 'media' to path
-                local_path = f"/label-studio/data/media{url[5:]}"  # Remove '/data' and add to media path
-                if os.path.exists(local_path):
-                    logger.info(f"Loading image from local path: {local_path}")
-                    return cv2.imread(local_path)
+                # Try multiple local file paths
+                local_paths = [
+                    f"/app{url}",  # /app/data/...
+                    f"/label-studio{url}",  # /label-studio/data/...
+                    f"/label-studio/data/media{url[5:]}",  # Remove '/data' and add to media path
+                ]
                 
-                # Fallback to app data path
-                app_local_path = f"/app{url}"
-                if os.path.exists(app_local_path):
-                    logger.info(f"Loading image from app path: {app_local_path}")
-                    return cv2.imread(app_local_path)
+                for local_path in local_paths:
+                    if os.path.exists(local_path):
+                        logger.info(f"Loading image from local path: {local_path}")
+                        img = cv2.imread(local_path)
+                        if img is not None:
+                            return img
                 
                 # Convert to full URL as fallback
                 url = f"http://label-studio:8080{url}"
@@ -249,12 +264,7 @@ class SimpleRTMLibBackend:
                 # Format results
                 result = []
                 for person_idx, (person_keypoints, person_scores) in enumerate(zip(keypoints, scores)):
-                    # Add skeleton connections
-                    skeleton = self._create_skeleton_polygon(person_keypoints, person_scores, image_width, image_height)
-                    if skeleton:
-                        result.append(skeleton)
-                    
-                    # Add individual keypoints
+                    # Add individual keypoints only (no skeleton)
                     for kp_idx, (keypoint, score) in enumerate(zip(person_keypoints, person_scores)):
                         if score > self.confidence_threshold and kp_idx < len(self.keypoint_labels):
                             x, y = keypoint
@@ -268,12 +278,18 @@ class SimpleRTMLibBackend:
                                 "value": {
                                     "x": x_percent,
                                     "y": y_percent,
-                                    "keypointlabels": [self.keypoint_labels[kp_idx]],
-                                    "width": 2,
-                                    "height": 2
+                                    "width": 0.1,  # Default keypoint size as percentage
+                                    "keypointlabels": [self.keypoint_labels[kp_idx]]
                                 },
                                 "score": float(score)
                             })
+                        elif kp_idx >= len(self.keypoint_labels):
+                            # Log if we have more keypoints than labels
+                            logger.warning(f"Keypoint index {kp_idx} exceeds available labels ({len(self.keypoint_labels)})")
+                
+                # Log keypoint counts for debugging
+                if len(keypoints) > 0:
+                    logger.info(f"Detected {len(keypoints[0])} keypoints, using {len([r for r in result if r['type'] == 'keypointlabels'])} above threshold")
                 
                 prediction = {
                     "result": result,
