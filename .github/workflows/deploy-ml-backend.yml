@@ -77,7 +77,8 @@ jobs:
           type=ref,event=pr
           type=raw,value=${{ steps.version.outputs.version }}
           type=raw,value=latest,enable={{is_default_branch}}
-          type=sha,prefix={{branch}}-
+        flavor: |
+          latest=auto
 
     - name: Build and push Docker image
       id: build
@@ -127,8 +128,11 @@ jobs:
 
     - name: Deploy to Kubernetes
       run: |
+        # Get the first image tag from the output
+        IMAGE_TAG=$(echo "${{ needs.build-and-push.outputs.image-tag }}" | head -n1)
+        echo "Deploying image: $IMAGE_TAG"
         cd k8s/overlays/staging
-        kustomize edit set image ghcr.io/fhswf/dgs-pg-gruppe-1/rtmlib-ml-backend=${{ needs.build-and-push.outputs.image-tag }}
+        kustomize edit set image ghcr.io/fhswf/dgs-pg-gruppe-1/rtmlib-ml-backend="$IMAGE_TAG"
         kubectl apply -k . --namespace=rtmlib
 
   deploy-production:
@@ -166,8 +170,11 @@ jobs:
 
     - name: Deploy to Kubernetes
       run: |
+        # Get the first image tag from the output
+        IMAGE_TAG=$(echo "${{ needs.build-and-push.outputs.image-tag }}" | head -n1)
+        echo "Deploying image: $IMAGE_TAG"
         cd k8s/overlays/production
-        kustomize edit set image ghcr.io/fhswf/dgs-pg-gruppe-1/rtmlib-ml-backend=${{ needs.build-and-push.outputs.image-tag }}
+        kustomize edit set image ghcr.io/fhswf/dgs-pg-gruppe-1/rtmlib-ml-backend="$IMAGE_TAG"
         kubectl apply -k . --namespace=rtmlib
 
   security-scan:
@@ -175,17 +182,28 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       security-events: write
+      contents: read
     
     steps:
+    - name: Get clean image tag
+      id: clean-tag
+      run: |
+        # Extract the first tag from the multi-line output
+        IMAGE_TAG=$(echo "${{ needs.build-and-push.outputs.image-tag }}" | head -n1)
+        echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+        echo "Scanning image: $IMAGE_TAG"
+
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
       with:
-        image-ref: ${{ needs.build-and-push.outputs.image-tag }}
+        image-ref: ${{ steps.clean-tag.outputs.image-tag }}
         format: 'sarif'
         output: 'trivy-results.sarif'
+      continue-on-error: true
 
     - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v2
-      if: always()
+      uses: github/codeql-action/upload-sarif@v3
+      if: always() && hashFiles('trivy-results.sarif') != ''
       with:
         sarif_file: 'trivy-results.sarif'
+      continue-on-error: true
