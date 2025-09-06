@@ -1,4 +1,0 @@
-# Development dependencies
-label-studio-ml-backend
-flask-testing
-pytest-flask
