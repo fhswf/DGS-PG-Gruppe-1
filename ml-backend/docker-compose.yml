@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  ml-backend:
+    build: .
+    container_name: rtmlib-ml-backend
+    ports:
+      - "9090:9090"
+    env_file:
+      - .env
+    environment:
+      - LABEL_STUDIO_ML_BACKEND_V2=true
+    volumes:
+      - ./models:/app/models
+      - ./cache:/app/cache
+      - ../data:/app/data:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsSL", "http://localhost:9090/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
