@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rtmlib-ml-backend
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+      - name: ml-backend
+        resources:
+          requests:
+            memory: "3Gi"
+            cpu: "1000m"
+          limits:
+            memory: "6Gi"
+            cpu: "3000m"
+        env:
+        - name: LOG_LEVEL
+          value: "WARNING"
+        - name: DEBUG
+          value: "false"
+        - name: MODE
+          value: "performance"
