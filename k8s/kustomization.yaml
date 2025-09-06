@@ -15,11 +15,7 @@ images:
 - name: ghcr.io/fhswf/dgs-pg-gruppe-1/rtmlib-ml-backend
   newTag: latest
 
-patchesStrategicMerge:
-- staging-patches.yaml
-
 commonLabels:
-  environment: staging
   app: rtmlib-ml-backend
 
 configMapGenerator:
