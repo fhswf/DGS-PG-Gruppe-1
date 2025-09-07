@@ -2,7 +2,7 @@ name: Deploy RTMLib ML Backend to Kubernetes
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
     paths:
       - 'ml-backend/**'
       - 'k8s/**'
@@ -13,15 +13,6 @@ on:
       - 'ml-backend/**'
       - 'k8s/**'
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Deployment environment'
-        required: true
-        default: 'staging'
-        type: choice
-        options:
-          - staging
-          - production
 
 env:
   REGISTRY: ghcr.io
@@ -93,52 +84,10 @@ jobs:
         cache-to: type=gha,mode=max
         platforms: linux/amd64,linux/arm64
 
-  deploy-staging:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/dev' || github.event.inputs.environment == 'staging'
-    environment: staging
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Configure kubectl
-      uses: azure/k8s-set-context@v3
-      with:
-        method: kubeconfig
-        kubeconfig: ${{ secrets.KUBE_CONFIG_STAGING }}
-
-    - name: Install kustomize
-      run: |
-        curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-        sudo mv kustomize /usr/local/bin/
-
-    - name: Create namespace if not exists
-      run: |
-        kubectl create namespace rtmlib --dry-run=client -o yaml | kubectl apply -f -
-
-    - name: Create secrets
-      run: |
-        kubectl create secret generic label-studio-config \
-          --from-literal=api-token="${{ secrets.LABEL_STUDIO_API_TOKEN_STAGING }}" \
-          --from-literal=url="${{ secrets.LABEL_STUDIO_URL_STAGING }}" \
-          --namespace=rtmlib \
-          --dry-run=client -o yaml | kubectl apply -f -
-
-    - name: Deploy to Kubernetes
-      run: |
-        # Get the first image tag from the output
-        IMAGE_TAG=$(echo "${{ needs.build-and-push.outputs.image-tag }}" | head -n1)
-        echo "Deploying image: $IMAGE_TAG"
-        cd k8s/overlays/staging
-        kustomize edit set image ghcr.io/fhswf/dgs-pg-gruppe-1/rtmlib-ml-backend="$IMAGE_TAG"
-        kubectl apply -k . --namespace=rtmlib
-
   deploy-production:
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.event.inputs.environment == 'production'
+    if: github.ref == 'refs/heads/main'
     environment: production
     
     steps:
@@ -149,7 +98,7 @@ jobs:
       uses: azure/k8s-set-context@v3
       with:
         method: kubeconfig
-        kubeconfig: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
+        kubeconfig: ${{ secrets.KUBE_CONFIG }}
 
     - name: Install kustomize
       run: |
@@ -163,8 +112,8 @@ jobs:
     - name: Create secrets
       run: |
         kubectl create secret generic label-studio-config \
-          --from-literal=api-token="${{ secrets.LABEL_STUDIO_API_TOKEN_PRODUCTION }}" \
-          --from-literal=url="${{ secrets.LABEL_STUDIO_URL_PRODUCTION }}" \
+          --from-literal=api-token="${{ secrets.LABEL_STUDIO_API_TOKEN }}" \
+          --from-literal=url="${{ secrets.LABEL_STUDIO_URL }}" \
           --namespace=rtmlib \
           --dry-run=client -o yaml | kubectl apply -f -
 
@@ -173,9 +122,14 @@ jobs:
         # Get the first image tag from the output
         IMAGE_TAG=$(echo "${{ needs.build-and-push.outputs.image-tag }}" | head -n1)
         echo "Deploying image: $IMAGE_TAG"
-        cd k8s/overlays/production
+        cd k8s
         kustomize edit set image ghcr.io/fhswf/dgs-pg-gruppe-1/rtmlib-ml-backend="$IMAGE_TAG"
         kubectl apply -k . --namespace=rtmlib
+
+    - name: Verify deployment
+      run: |
+        kubectl rollout status deployment/rtmlib-ml-backend --namespace=rtmlib --timeout=300s
+        kubectl get pods -l app=rtmlib-ml-backend --namespace=rtmlib
 
   security-scan:
     needs: build-and-push

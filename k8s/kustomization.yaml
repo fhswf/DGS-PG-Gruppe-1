@@ -17,6 +17,11 @@ images:
 
 commonLabels:
   app: rtmlib-ml-backend
+  environment: production
+
+replicas:
+- name: rtmlib-ml-backend
+  count: 3
 
 configMapGenerator:
 - name: rtmlib-ml-backend-config
@@ -26,3 +31,4 @@ configMapGenerator:
   - MODE=balanced
   - LOG_LEVEL=INFO
   - DEBUG=false
+  - CONFIDENCE_THRESHOLD=0.5

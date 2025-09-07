@@ -19,18 +19,11 @@ This guide explains how to deploy the RTMLib ML Backend to a Kubernetes cluster 
 
 Set up the following secrets in your GitHub repository:
 
-#### For Staging Environment:
+#### **For Production Environment:**
 ```
-KUBE_CONFIG_STAGING              # Base64 encoded kubeconfig file
-LABEL_STUDIO_API_TOKEN_STAGING   # Label Studio API token
-LABEL_STUDIO_URL_STAGING         # Label Studio URL (e.g., http://label-studio:8080)
-```
-
-#### For Production Environment:
-```
-KUBE_CONFIG_PRODUCTION           # Base64 encoded kubeconfig file  
-LABEL_STUDIO_API_TOKEN_PRODUCTION # Label Studio API token
-LABEL_STUDIO_URL_PRODUCTION      # Label Studio URL (e.g., https://label-studio.yourdomain.com)
+KUBE_CONFIG                      # Base64 encoded kubeconfig file
+LABEL_STUDIO_API_TOKEN          # Label Studio API token
+LABEL_STUDIO_URL                # Label Studio URL (e.g., https://label-studio.yourdomain.com)
 ```
 
 ## 🚀 Deployment Process
@@ -39,9 +32,8 @@ LABEL_STUDIO_URL_PRODUCTION      # Label Studio URL (e.g., https://label-studio.
 
 The GitHub Actions workflow will automatically deploy when:
 
-1. **Staging**: Push to `dev` branch (creates beta releases)
-2. **Production**: Push to `main` branch (creates stable releases)
-3. **Manual**: Workflow dispatch with environment selection
+1. **Production**: Push to `main` branch
+2. **Manual**: Workflow dispatch trigger
 
 ### Domain Configuration
 
@@ -218,14 +210,7 @@ kubectl get pods -n rtmlib
 ```bash
 # Commit and push to trigger deployment
 git add .
-git commit -m "feat: deploy RTMLib ML backend to Kubernetes"
-
-# Deploy to staging (dev branch)
-git push origin dev
-
-# Deploy to production (main branch)  
-git checkout main
-git merge dev
+git commit -m "feat: deploy RTMLib ML backend to production"
 git push origin main
 ```
 
