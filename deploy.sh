@@ -3,13 +3,11 @@
 set -e
 
 # Kubernetes Deployment Script for RTMLib ML Backend
-# Usage: ./deploy.sh [staging|production] [namespace]
+# Usage: ./deploy.sh [namespace]
 
-ENVIRONMENT=${1:-staging}
-NAMESPACE=${2:-rtmlib}
+NAMESPACE=${1:-rtmlib}
 
 echo "🚀 Deploying RTMLib ML Backend to Kubernetes"
-echo "Environment: $ENVIRONMENT"
 echo "Namespace: $NAMESPACE"
 
 # Check if kubectl is available
@@ -23,12 +21,6 @@ if ! command -v kustomize &> /dev/null; then
     echo "⚠️  kustomize not found, installing..."
     curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
     sudo mv kustomize /usr/local/bin/
-fi
-
-# Validate environment
-if [[ "$ENVIRONMENT" != "staging" && "$ENVIRONMENT" != "production" ]]; then
-    echo "❌ Environment must be 'staging' or 'production'"
-    exit 1
 fi
 
 # Create namespace if it doesn't exist
@@ -53,7 +45,7 @@ fi
 
 # Deploy using kustomize
 echo "🛠️  Deploying with kustomize..."
-cd "$(dirname "$0")/k8s/overlays/$ENVIRONMENT"
+cd "$(dirname "$0")/k8s"
 
 # Build and apply manifests
 kustomize build . | kubectl apply -f -
@@ -63,7 +55,7 @@ echo ""
 echo "📋 Useful commands:"
 echo "kubectl get pods -n $NAMESPACE"
 echo "kubectl logs -f deployment/rtmlib-ml-backend -n $NAMESPACE"
-echo "kubectl port-forward service/rtmlib-ml-backend-service 9090:80 -n $NAMESPACE"
+echo "kubectl port-forward service/rtmlib-ml-backend-service 9090:9090 -n $NAMESPACE"
 echo ""
 echo "🌐 Access the service:"
 echo "kubectl get ingress -n $NAMESPACE"
