@@ -87,25 +87,9 @@ docker compose up -d
 - **Balanced**: Good accuracy-speed trade-off
 - **Lightweight**: Fast inference, lower accuracy
 
-## 🌐 **Production Deployment**
-
-The system is deployed on Kubernetes with:
-
-- **High Availability**: 3 replicas with auto-scaling
-- **Load Balancing**: Traefik ingress with TLS
-- **Monitoring**: Prometheus metrics and health checks
-- **Security**: Non-root containers, secret management
-
 **Access URLs:**
-- **Primary**: https://rtmlib.gawron.cloud
-- **FH-SWF**: https://rtmlib.fh-swf.cloud
-
-## 📊 **Performance**
-
-- **Inference Speed**: ~50ms per frame (CPU)
-- **Accuracy**: 95%+ keypoint detection rate
-- **Scalability**: Handles 100+ concurrent requests
-- **Uptime**: 99.9% availability
+- **LabelStudio**: https://label-studio.fh-swf.cloud
+- **ML-Backend**: https://rtmlib.fh-swf.cloud
 
 ## 🤝 **Contributing**
 
@@ -114,10 +98,6 @@ The system is deployed on Kubernetes with:
 3. Make your changes
 4. Add tests if applicable
 5. Submit a pull request
-
-## 📄 **License**
-
-This project is developed for research purposes in German Sign Language analysis.
 
 ## 👥 **Team**
 
