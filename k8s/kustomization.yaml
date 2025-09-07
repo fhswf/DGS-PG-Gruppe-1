@@ -1,0 +1,34 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: rtmlib
+
+resources:
+- deployment.yaml
+- service.yaml
+- ingress.yaml
+- configmap.yaml
+- hpa.yaml
+- monitoring.yaml
+
+images:
+- name: ghcr.io/fhswf/dgs-pg-gruppe-1/rtmlib-ml-backend
+  newTag: latest
+
+commonLabels:
+  app: rtmlib-ml-backend
+  environment: production
+
+replicas:
+- name: rtmlib-ml-backend
+  count: 3
+
+configMapGenerator:
+- name: rtmlib-ml-backend-config
+  literals:
+  - DEVICE=cpu
+  - BACKEND_TYPE=onnxruntime
+  - MODE=balanced
+  - LOG_LEVEL=INFO
+  - DEBUG=false
+  - CONFIDENCE_THRESHOLD=0.5

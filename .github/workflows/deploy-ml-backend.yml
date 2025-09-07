@@ -1,0 +1,163 @@
+name: Deploy RTMLib ML Backend to Kubernetes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ml-backend/**'
+      - 'k8s/**'
+      - '.github/workflows/deploy-ml-backend.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ml-backend/**'
+      - 'k8s/**'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/rtmlib-ml-backend
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+      version: ${{ steps.version.outputs.version }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Get version from semantic release
+      id: version
+      run: |
+        # Get the latest tag, fallback to commit SHA if no tags exist
+        if git describe --tags --abbrev=0 2>/dev/null; then
+          VERSION=$(git describe --tags --abbrev=0 | sed 's/^v//')
+        else
+          VERSION="0.1.0-${GITHUB_SHA::8}"
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Version: $VERSION"
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=raw,value=${{ steps.version.outputs.version }}
+          type=raw,value=latest,enable={{is_default_branch}}
+        flavor: |
+          latest=auto
+
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: ./ml-backend
+        file: ./ml-backend/Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64,linux/arm64
+
+  deploy-production:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Configure kubectl
+      uses: azure/k8s-set-context@v3
+      with:
+        method: kubeconfig
+        kubeconfig: ${{ secrets.KUBE_CONFIG }}
+
+    - name: Install kustomize
+      run: |
+        curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+        sudo mv kustomize /usr/local/bin/
+
+    - name: Create namespace if not exists
+      run: |
+        kubectl create namespace rtmlib --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Create secrets
+      run: |
+        kubectl create secret generic label-studio-config \
+          --from-literal=api-token="${{ secrets.LABEL_STUDIO_API_TOKEN }}" \
+          --from-literal=url="${{ secrets.LABEL_STUDIO_URL }}" \
+          --namespace=rtmlib \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Deploy to Kubernetes
+      run: |
+        # Get the first image tag from the output
+        IMAGE_TAG=$(echo "${{ needs.build-and-push.outputs.image-tag }}" | head -n1)
+        echo "Deploying image: $IMAGE_TAG"
+        cd k8s
+        kustomize edit set image ghcr.io/fhswf/dgs-pg-gruppe-1/rtmlib-ml-backend="$IMAGE_TAG"
+        kubectl apply -k . --namespace=rtmlib
+
+    - name: Verify deployment
+      run: |
+        kubectl rollout status deployment/rtmlib-ml-backend --namespace=rtmlib --timeout=300s
+        kubectl get pods -l app=rtmlib-ml-backend --namespace=rtmlib
+
+  security-scan:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    
+    steps:
+    - name: Get clean image tag
+      id: clean-tag
+      run: |
+        # Extract the first tag from the multi-line output
+        IMAGE_TAG=$(echo "${{ needs.build-and-push.outputs.image-tag }}" | head -n1)
+        echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+        echo "Scanning image: $IMAGE_TAG"
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ steps.clean-tag.outputs.image-tag }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+      continue-on-error: true
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always() && hashFiles('trivy-results.sarif') != ''
+      with:
+        sarif_file: 'trivy-results.sarif'
+      continue-on-error: true

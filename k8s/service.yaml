@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: rtmlib-ml-backend-service
+  labels:
+    app: rtmlib-ml-backend
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+    name: http
+  selector:
+    app: rtmlib-ml-backend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rtmlib-ml-backend-headless
+  labels:
+    app: rtmlib-ml-backend
+spec:
+  clusterIP: None
+  ports:
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+    name: http
+  selector:
+    app: rtmlib-ml-backend

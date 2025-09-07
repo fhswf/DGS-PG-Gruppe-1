@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rtmlib-ml-backend
+  labels:
+    app: rtmlib-ml-backend
+    version: v1
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: rtmlib-ml-backend
+  template:
+    metadata:
+      labels:
+        app: rtmlib-ml-backend
+        version: v1
+    spec:
+      containers:
+      - name: ml-backend
+        image: ghcr.io/fhswf/dgs-pg-gruppe-1/rtmlib-ml-backend:latest  # This will be replaced by GitHub Actions
+        ports:
+        - containerPort: 9090
+          name: http
+        env:
+        - name: BACKEND_PORT
+          value: "9090"
+        - name: DEVICE
+          value: "cpu"
+        - name: BACKEND_TYPE
+          value: "onnxruntime"
+        - name: MODE
+          value: "balanced"
+        - name: CONFIDENCE_THRESHOLD
+          value: "0.3"
+        - name: DEBUG
+          value: "false"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: LABEL_STUDIO_URL
+          valueFrom:
+            secretKeyRef:
+              name: label-studio-config
+              key: url
+        - name: LABEL_STUDIO_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: label-studio-config
+              key: api-token
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        volumeMounts:
+        - name: model-cache
+          mountPath: /home/app/.cache
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: model-cache
+        emptyDir:
+          sizeLimit: 10Gi
+      securityContext:
+        fsGroup: 1000
+      serviceAccountName: rtmlib-ml-backend
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rtmlib-ml-backend
+  labels:
+    app: rtmlib-ml-backend

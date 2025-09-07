@@ -1,0 +1,85 @@
+# Environment variables
+.env
+.env.local
+.env.production
+.env.staging
+.env.development
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+pip-selfcheck.json
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Cache and temporary files
+.cache/
+.pytest_cache/
+.coverage
+htmlcov/
+*.tmp
+*.temp
+.tmp/
+
+# Model cache and downloads
+models/cache.db
+models/*.onnx
+models/checkpoints/
+*.onnx
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Backup files
+*.bak
+*.backup
