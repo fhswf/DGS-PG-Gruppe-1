@@ -42,6 +42,8 @@ spec:
           value: "false"
         - name: LOG_LEVEL
           value: "INFO"
+        - name: LABEL_STUDIO_ML_BACKEND_V2
+          value: "true"
         - name: LABEL_STUDIO_URL
           valueFrom:
             configMapKeyRef:
