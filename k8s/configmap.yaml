@@ -13,15 +13,15 @@ data:
   CONFIDENCE_THRESHOLD: "0.3"
   DEBUG: "false"
   LOG_LEVEL: "INFO"
+  url: "http://label-studio-service:8080"
 ---
 apiVersion: v1
 kind: Secret
 metadata:
-  name: label-studio-config-template
+  name: rtmlib-ml-backend-secret
   labels:
     app: rtmlib-ml-backend
 type: Opaque
 stringData:
-  # These will be overridden by GitHub Actions
   api-token: "your-label-studio-api-token"
-  url: "http://label-studio-service:8080"
+  
