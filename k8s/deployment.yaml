@@ -44,7 +44,7 @@ spec:
           value: "INFO"
         - name: LABEL_STUDIO_URL
           valueFrom:
-            configMapRef:
+            configMapKeyRef:
               name: rtmlib-ml-backend-config
               key: url
         - name: LABEL_STUDIO_API_TOKEN
