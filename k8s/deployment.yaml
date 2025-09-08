@@ -44,13 +44,13 @@ spec:
           value: "INFO"
         - name: LABEL_STUDIO_URL
           valueFrom:
-            secretKeyRef:
-              name: label-studio-config
+            configMapRef:
+              name: rtmlib-ml-backend-config
               key: url
         - name: LABEL_STUDIO_API_TOKEN
           valueFrom:
             secretKeyRef:
-              name: label-studio-config
+              name: rtmlib-ml-backend-secret
               key: api-token
         resources:
           requests:
