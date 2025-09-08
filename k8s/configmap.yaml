@@ -13,5 +13,5 @@ data:
   CONFIDENCE_THRESHOLD: "0.3"
   DEBUG: "false"
   LOG_LEVEL: "INFO"
-  url: "http://label-studio-service:8080"
+  URL: "http://label-studio-ls-app.label-studio.svc.cluster.local"
   
