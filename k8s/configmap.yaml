@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: rtmlib-ml-backend-config
+  name: label-studio-config
   labels:
     app: rtmlib-ml-backend
 data:
@@ -18,7 +18,7 @@ data:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: rtmlib-ml-backend-secret
+  name: label-studio-secret
   labels:
     app: rtmlib-ml-backend
 type: Opaque
