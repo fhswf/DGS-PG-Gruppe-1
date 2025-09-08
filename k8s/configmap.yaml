@@ -14,14 +14,4 @@ data:
   DEBUG: "false"
   LOG_LEVEL: "INFO"
   url: "http://label-studio-service:8080"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: rtmlib-ml-backend-secret
-  labels:
-    app: rtmlib-ml-backend
-type: Opaque
-stringData:
-  api-token: "your-label-studio-api-token"
   
