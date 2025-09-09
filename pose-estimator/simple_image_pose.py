@@ -71,8 +71,8 @@ Examples:
     parser.add_argument(
         '--threshold', '-t',
         type=float,
-        default=0.3,
-        help='Keypoint confidence threshold (default: 0.3)'
+        default=0.8,  # Erhöht auf 0.8 für hohe Qualität
+        help='Keypoint confidence threshold (default: 0.8)'
     )
     
     parser.add_argument(
@@ -84,9 +84,9 @@ Examples:
     
     parser.add_argument(
         '--mode',
-        choices=['performance', 'lightweight', 'balanced'],
-        default='balanced',
-        help='Model mode (default: balanced)'
+        choices=['performance', 'balanced', 'lightweight'],
+        default='performance',  # Changed from 'balanced' to 'performance'
+        help='Model mode (default: performance)'
     )
     
     return parser.parse_args()
@@ -158,15 +158,23 @@ def main():
             print(f"\n✅ Successfully detected {result.num_persons} person(s)")
             for i in range(result.num_persons):
                 visible_kpts = sum(result.scores[i] > args.threshold)
-                avg_conf = result.scores[i][result.scores[i] > 0].mean()
+                avg_conf = result.scores[i][result.scores[i] > args.threshold].mean() if visible_kpts > 0 else 0
+                
                 print(f"   Person {i+1}: {visible_kpts}/133 keypoints, avg confidence: {avg_conf:.3f}")
                 
-                # Show keypoint breakdown
+                # Show keypoint breakdown with improved thresholds
                 body_kpts = sum(result.scores[i][:17] > args.threshold)
                 face_kpts = sum(result.scores[i][17:85] > args.threshold) 
                 hand_kpts = sum(result.scores[i][91:] > args.threshold)
                 
                 print(f"             Body: {body_kpts}/17, Face: {face_kpts}/68, Hands: {hand_kpts}/42")
+                
+                # Quality analysis
+                high_conf = sum(result.scores[i] > 0.8)
+                medium_conf = sum((result.scores[i] > 0.5) & (result.scores[i] <= 0.8))
+                low_conf = sum((result.scores[i] > args.threshold) & (result.scores[i] <= 0.5))
+                
+                print(f"             Quality: {high_conf} high (>0.8), {medium_conf} medium (0.5-0.8), {low_conf} low ({args.threshold}-0.5)")
         else:
             print("\n❌ No persons detected")
             

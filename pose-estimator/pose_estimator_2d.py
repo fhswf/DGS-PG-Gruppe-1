@@ -69,11 +69,11 @@ class PoseEstimator2D:
     
     def __init__(
         self,
-        mode: str = 'balanced',
+        mode: str = 'performance',
         backend: str = 'onnxruntime',
         device: str = 'cpu',
         to_openpose: bool = False,
-        kpt_threshold: float = 0.3
+        kpt_threshold: float = 0.8  # Erhöht auf 0.8 für hohe Qualität
     ):
         """
         Initialize the PoseEstimator2D.
@@ -472,7 +472,7 @@ class PoseEstimator2D:
 def estimate_pose_image(
     image_path: Union[str, Path],
     output_path: Optional[Union[str, Path]] = None,
-    mode: str = 'balanced',
+    mode: str = 'performance',  # Changed from 'balanced' to 'performance'
     device: str = 'cpu'
 ) -> PoseResult:
     """
@@ -498,7 +498,7 @@ def estimate_pose_image(
 def estimate_pose_video(
     video_path: Union[str, Path],
     output_dir: Optional[Union[str, Path]] = None,
-    mode: str = 'balanced',
+    mode: str = 'performance',  # Changed from 'balanced' to 'performance'
     device: str = 'cpu',
     max_frames: Optional[int] = None
 ) -> VideoResult:
