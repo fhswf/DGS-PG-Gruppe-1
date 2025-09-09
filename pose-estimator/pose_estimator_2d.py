@@ -5,309 +5,161 @@ This module provides a convenient wrapper around the RTMLib library for performi
 whole-body pose estimation on video files. It supports multiple performance modes
 and outputs pose coordinates following the COCO WholeBody standard (133 keypoints).
 
-Author: Generated based on pose-estimation notebook and RTMLib documentation
+Author: DGS Project Group 1
+Date: September 2025
 """
 
 import cv2
 import numpy as np
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Tuple, Any
-from dataclasses import dataclass, field
-import warnings
+from typing import Union, List, Tuple, Optional
+from dataclasses import dataclass
+import json
+import time
 
 try:
-    from rtmlib import Wholebody, draw_skeleton, draw_bbox
+    from rtmlib import Wholebody, draw_skeleton
 except ImportError:
-    raise ImportError(
-        "RTMLib is required. Install it with: pip install rtmlib"
-    )
+    raise ImportError("RTMLib not found. Please install with: pip install rtmlib")
 
 
 @dataclass
 class PoseResult:
     """
-    Container for pose estimation results from a single frame.
+    Data class to store pose estimation results for a single frame or image.
     
     Attributes:
-        frame_idx: Index of the frame in the video
-        keypoints: Array of shape (N, 133, 2) containing x,y coordinates for N persons
-        scores: Array of shape (N, 133) containing confidence scores for each keypoint
-        bboxes: Array of shape (N, 5) containing bounding boxes (x1, y1, x2, y2, score)
-        num_persons: Number of detected persons in the frame
+        frame_idx: Frame index (0 for single images)
+        keypoints: Array of shape (num_persons, 133, 2) containing x,y coordinates
+        scores: Array of shape (num_persons, 133) containing confidence scores
+        bboxes: Array of shape (num_persons, 5) containing bounding boxes [x1,y1,x2,y2,score]
+        num_persons: Number of detected persons
     """
     frame_idx: int
     keypoints: np.ndarray
-    scores: np.ndarray  
+    scores: np.ndarray
     bboxes: np.ndarray
     num_persons: int
 
 
-@dataclass 
+@dataclass
 class VideoResult:
     """
-    Container for pose estimation results from an entire video.
+    Data class to store video processing results.
     
     Attributes:
-        video_path: Path to the input video file
-        total_frames: Total number of frames processed
-        frame_results: List of PoseResult objects, one per frame
-        fps: Original video frame rate
-        resolution: Original video resolution (width, height)
-        processing_stats: Dictionary with processing statistics
+        frame_results: List of PoseResult objects for each frame
+        total_frames: Total number of processed frames
+        fps: Original video FPS
+        processing_time: Total processing time in seconds
     """
-    video_path: str
+    frame_results: List[PoseResult]
     total_frames: int
-    frame_results: List[PoseResult] = field(default_factory=list)
-    fps: Optional[float] = None
-    resolution: Optional[Tuple[int, int]] = None
-    processing_stats: Dict[str, Any] = field(default_factory=dict)
-    
-    def get_keypoints_by_frame(self, frame_idx: int) -> Optional[np.ndarray]:
-        """Get keypoints for a specific frame."""
-        if 0 <= frame_idx < len(self.frame_results):
-            return self.frame_results[frame_idx].keypoints
-        return None
-    
-    def get_all_keypoints(self) -> List[np.ndarray]:
-        """Get keypoints for all frames."""
-        return [result.keypoints for result in self.frame_results]
-    
-    def get_person_trajectory(self, person_idx: int = 0) -> List[Optional[np.ndarray]]:
-        """
-        Get the keypoint trajectory for a specific person across all frames.
-        
-        Args:
-            person_idx: Index of the person (0 for first detected person)
-            
-        Returns:
-            List of keypoint arrays, None for frames where person was not detected
-        """
-        trajectory = []
-        for result in self.frame_results:
-            if result.num_persons > person_idx:
-                trajectory.append(result.keypoints[person_idx])
-            else:
-                trajectory.append(None)
-        return trajectory
+    fps: float
+    processing_time: float
 
 
 class PoseEstimator2D:
     """
-    A Python wrapper class for 2D pose estimation using RTMLib.
+    A wrapper class for RTMLib pose estimation.
     
-    This class provides an easy-to-use interface for performing whole-body pose 
-    estimation on video files. It supports different performance modes and outputs
-    pose coordinates following the COCO WholeBody standard (133 keypoints).
-    
-    Example:
-        >>> estimator = PoseEstimator2D(mode='balanced')
-        >>> result = estimator.process_video('path/to/video.mp4')
-        >>> print(f"Processed {result.total_frames} frames")
-        >>> print(f"Found {result.frame_results[0].num_persons} persons in first frame")
+    This class provides an easy-to-use interface for whole-body pose estimation
+    supporting 133 keypoints (17 body + 68 face + 42 hands + 6 feet).
     """
-    
-    VALID_MODES = ['performance', 'lightweight', 'balanced']
-    VALID_BACKENDS = ['onnxruntime', 'opencv', 'openvino']
-    VALID_DEVICES = ['cpu', 'cuda', 'mps']
     
     def __init__(
         self,
         mode: str = 'balanced',
-        backend: str = 'onnxruntime', 
+        backend: str = 'onnxruntime',
         device: str = 'cpu',
-        kpt_threshold: float = 0.3,
-        to_openpose: bool = False
+        to_openpose: bool = False,
+        kpt_threshold: float = 0.3
     ):
         """
         Initialize the PoseEstimator2D.
         
         Args:
-            mode: Performance mode - 'performance', 'lightweight', or 'balanced'
-            backend: Inference backend - 'onnxruntime', 'opencv', or 'openvino'  
-            device: Compute device - 'cpu', 'cuda', or 'mps'
-            kpt_threshold: Confidence threshold for keypoint detection (0.0-1.0)
-            to_openpose: Whether to use OpenPose-style keypoint format
-            
-        Raises:
-            ValueError: If invalid mode, backend, or device is specified
+            mode: Performance mode ('performance', 'balanced', 'lightweight')
+            backend: Backend to use ('onnxruntime', 'opencv', 'openvino')
+            device: Device to use ('cpu', 'cuda', 'mps')
+            to_openpose: Whether to convert to OpenPose format
+            kpt_threshold: Keypoint confidence threshold
         """
-        # Validate parameters
-        if mode not in self.VALID_MODES:
-            raise ValueError(f"Invalid mode '{mode}'. Must be one of: {self.VALID_MODES}")
-        if backend not in self.VALID_BACKENDS:
-            raise ValueError(f"Invalid backend '{backend}'. Must be one of: {self.VALID_BACKENDS}")
-        if device not in self.VALID_DEVICES:
-            raise ValueError(f"Invalid device '{device}'. Must be one of: {self.VALID_DEVICES}")
-        if not 0.0 <= kpt_threshold <= 1.0:
-            raise ValueError("kpt_threshold must be between 0.0 and 1.0")
-            
         self.mode = mode
         self.backend = backend
         self.device = device
-        self.kpt_threshold = kpt_threshold
         self.to_openpose = to_openpose
+        self.kpt_threshold = kpt_threshold
         
-        # Initialize the Wholebody model
+        # Initialize RTMLib Wholebody model for 133 keypoints
         try:
-            self.wholebody = Wholebody(
+            self.model = Wholebody(
                 mode=mode,
-                backend=backend, 
+                backend=backend,
                 device=device,
                 to_openpose=to_openpose
             )
-            print(f"PoseEstimator2D initialized with mode='{mode}', backend='{backend}', device='{device}'")
+            print(f"Initialized RTMLib Wholebody with mode={mode}, backend={backend}, device={device}")
         except Exception as e:
-            raise RuntimeError(f"Failed to initialize Wholebody model: {e}")
+            raise RuntimeError(f"Failed to initialize RTMLib: {e}")
     
-    @property 
-    def mode(self) -> str:
-        """Get the current performance mode."""
-        return self._mode
-    
-    @mode.setter
-    def mode(self, value: str):
-        """Set the performance mode."""
-        if value not in self.VALID_MODES:
-            raise ValueError(f"Invalid mode '{value}'. Must be one of: {self.VALID_MODES}")
-        self._mode = value
-        
-    def process_video(
-        self,
-        video_path: Union[str, Path],
-        max_frames: Optional[int] = None,
-        start_frame: int = 0,
-        progress_callback: Optional[callable] = None
-    ) -> VideoResult:
-        """
-        Process a video file and extract pose keypoints for all frames.
-        
-        Args:
-            video_path: Path to the input video file
-            max_frames: Maximum number of frames to process (None for all frames)
-            start_frame: Frame index to start processing from 
-            progress_callback: Optional callback function for progress updates
-            
-        Returns:
-            VideoResult object containing all pose estimation results
-            
-        Raises:
-            FileNotFoundError: If the video file doesn't exist
-            ValueError: If the video cannot be opened
-        """
-        video_path = Path(video_path)
-        if not video_path.exists():
-            raise FileNotFoundError(f"Video file not found: {video_path}")
-            
-        # Open video capture
-        cap = cv2.VideoCapture(str(video_path))
-        if not cap.isOpened():
-            raise ValueError(f"Cannot open video file: {video_path}")
-            
-        try:
-            # Get video properties
-            total_frames_in_video = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            
-            # Determine frames to process
-            if max_frames is None:
-                frames_to_process = total_frames_in_video - start_frame
-            else:
-                frames_to_process = min(max_frames, total_frames_in_video - start_frame)
-                
-            # Skip to start frame
-            if start_frame > 0:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-            
-            # Initialize result container
-            result = VideoResult(
-                video_path=str(video_path),
-                total_frames=frames_to_process,
-                fps=fps,
-                resolution=(width, height)
-            )
-            
-            # Process frames
-            frame_idx = start_frame
-            processed_frames = 0
-            frames_with_detections = 0
-            total_persons_detected = 0
-            
-            print(f"Processing {frames_to_process} frames starting from frame {start_frame}...")
-            
-            while processed_frames < frames_to_process:
-                ret, frame = cap.read()
-                if not ret:
-                    print(f"End of video reached at frame {frame_idx}")
-                    break
-                    
-                # Process frame
-                frame_result = self._process_frame(frame, frame_idx)
-                result.frame_results.append(frame_result)
-                
-                # Update statistics
-                if frame_result.num_persons > 0:
-                    frames_with_detections += 1
-                    total_persons_detected += frame_result.num_persons
-                
-                # Progress callback
-                if progress_callback:
-                    progress = (processed_frames + 1) / frames_to_process
-                    progress_callback(progress, frame_idx, frame_result.num_persons)
-                    
-                processed_frames += 1
-                frame_idx += 1
-                
-                # Print progress every 10 frames
-                if processed_frames % 10 == 0:
-                    print(f"Processed {processed_frames}/{frames_to_process} frames")
-            
-            # Update final statistics
-            result.processing_stats = {
-                'frames_with_detections': frames_with_detections,
-                'total_persons_detected': total_persons_detected,
-                'avg_persons_per_frame': total_persons_detected / max(1, processed_frames),
-                'detection_rate': frames_with_detections / max(1, processed_frames)
-            }
-            
-            print(f"Video processing complete!")
-            print(f"- Processed: {processed_frames} frames")
-            print(f"- Frames with detections: {frames_with_detections}")
-            print(f"- Total persons detected: {total_persons_detected}")
-            print(f"- Average persons per frame: {result.processing_stats['avg_persons_per_frame']:.2f}")
-            
-            return result
-            
-        finally:
-            cap.release()
-    
-    def _process_frame(self, frame: np.ndarray, frame_idx: int) -> PoseResult:
+    def _process_frame(self, frame: np.ndarray, frame_idx: int = 0) -> PoseResult:
         """
         Process a single frame and extract pose keypoints.
         
         Args:
             frame: Input frame as numpy array (BGR format)
-            frame_idx: Index of the frame
+            frame_idx: Frame index for tracking
             
         Returns:
-            PoseResult object containing pose estimation results for this frame
+            PoseResult object containing pose estimation results
         """
         try:
-            # Run detection to get person bounding boxes
-            bboxes = self.wholebody.det_model(frame)
+            # Perform pose estimation
+            keypoints, scores = self.model(frame)
             
-            # Run pose estimation with detected bboxes
-            keypoints, scores = self.wholebody.pose_model(frame, bboxes=bboxes)
-            
-            # Handle case where no persons are detected
+            # Handle empty results
             if keypoints is None or len(keypoints) == 0:
-                keypoints = np.empty((0, 133, 2))
-                scores = np.empty((0, 133))
-                bboxes = np.empty((0, 5))
-                num_persons = 0
-            else:
-                num_persons = keypoints.shape[0]
+                return PoseResult(
+                    frame_idx=frame_idx,
+                    keypoints=np.empty((0, 133, 2)),
+                    scores=np.empty((0, 133)),
+                    bboxes=np.empty((0, 5)),
+                    num_persons=0
+                )
+            
+            # Ensure correct shape
+            keypoints = np.array(keypoints)
+            scores = np.array(scores)
+            
+            if keypoints.ndim == 2:
+                keypoints = keypoints[np.newaxis, ...]
+            if scores.ndim == 1:
+                scores = scores[np.newaxis, ...]
+            
+            num_persons = keypoints.shape[0]
+            
+            # Calculate bounding boxes from keypoints
+            bboxes = []
+            for i in range(num_persons):
+                valid_kpts = keypoints[i][scores[i] > self.kpt_threshold]
+                if len(valid_kpts) > 0:
+                    x_coords = valid_kpts[:, 0]
+                    y_coords = valid_kpts[:, 1]
+                    x1, y1 = np.min(x_coords), np.min(y_coords)
+                    x2, y2 = np.max(x_coords), np.max(y_coords)
+                    # Add some padding
+                    padding = 20
+                    x1 = max(0, x1 - padding)
+                    y1 = max(0, y1 - padding)
+                    x2 = min(frame.shape[1], x2 + padding)
+                    y2 = min(frame.shape[0], y2 + padding)
+                    confidence = np.mean(scores[i][scores[i] > self.kpt_threshold])
+                    bboxes.append([x1, y1, x2, y2, confidence])
+                else:
+                    bboxes.append([0, 0, 0, 0, 0])
+            
+            bboxes = np.array(bboxes) if bboxes else np.empty((0, 5))
             
             return PoseResult(
                 frame_idx=frame_idx,
@@ -318,7 +170,7 @@ class PoseEstimator2D:
             )
             
         except Exception as e:
-            warnings.warn(f"Error processing frame {frame_idx}: {e}")
+            print(f"Error processing frame {frame_idx}: {e}")
             # Return empty result on error
             return PoseResult(
                 frame_idx=frame_idx,
@@ -328,221 +180,378 @@ class PoseEstimator2D:
                 num_persons=0
             )
     
-    def process_frame(self, frame: np.ndarray) -> PoseResult:
+    def process_image(
+        self,
+        image_path: Union[str, Path]
+    ) -> PoseResult:
         """
-        Process a single frame (public interface).
+        Process a single image and extract pose keypoints.
         
         Args:
-            frame: Input frame as numpy array (BGR format)
+            image_path: Path to the input image file
+            
+        Returns:
+            PoseResult object containing pose estimation results
+            
+        Raises:
+            FileNotFoundError: If the image file doesn't exist
+            ValueError: If the image cannot be loaded
+        """
+        image_path = Path(image_path)
+        if not image_path.exists():
+            raise FileNotFoundError(f"Image file not found: {image_path}")
+        
+        # Load image
+        frame = cv2.imread(str(image_path))
+        if frame is None:
+            raise ValueError(f"Cannot load image file: {image_path}")
+        
+        print(f"Processing image: {image_path}")
+        print(f"Image shape: {frame.shape}")
+        
+        # Process the image (frame_idx=0 for single image)
+        result = self._process_frame(frame, frame_idx=0)
+        
+        print(f"Detected {result.num_persons} person(s) in the image")
+        return result
+    
+    def process_image_with_annotation(
+        self,
+        image_path: Union[str, Path],
+        output_path: Optional[Union[str, Path]] = None,
+        draw_bbox: bool = True,
+        draw_keypoints: bool = True,
+        keypoint_threshold: float = 0.3
+    ) -> PoseResult:
+        """
+        Process a single image and optionally save the annotated result.
+        
+        Args:
+            image_path: Path to the input image file
+            output_path: Path to save the annotated image (optional)
+            draw_bbox: Whether to draw bounding boxes
+            draw_keypoints: Whether to draw keypoints and skeleton
+            keypoint_threshold: Minimum confidence threshold for drawing keypoints
             
         Returns:
             PoseResult object containing pose estimation results
         """
-        return self._process_frame(frame, 0)
+        image_path = Path(image_path)
+        
+        # Only create output directory if output_path is provided
+        if output_path is not None:
+            output_path = Path(output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Load image
+        frame = cv2.imread(str(image_path))
+        if frame is None:
+            raise ValueError(f"Cannot load image file: {image_path}")
+        
+        print(f"Processing image: {image_path}")
+        
+        # Process the image
+        result = self._process_frame(frame, frame_idx=0)
+        
+        # Create annotated image
+        annotated_frame = frame.copy()
+        
+        if result.num_persons > 0:
+            # Draw bounding boxes
+            if draw_bbox and len(result.bboxes) > 0:
+                for bbox in result.bboxes:
+                    x1, y1, x2, y2 = bbox[:4].astype(int)
+                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            
+            # Draw keypoints and skeleton
+            if draw_keypoints:
+                annotated_frame = draw_skeleton(
+                    annotated_frame,
+                    result.keypoints,
+                    result.scores,
+                    kpt_thr=keypoint_threshold
+                )
+        
+        # Save annotated image only if output_path is provided
+        if output_path is not None:
+            cv2.imwrite(str(output_path), annotated_frame)
+            print(f"Saved annotated image to: {output_path}")
+        
+        return result
     
-    def visualize_frame(
+    def process_video(
         self,
-        frame: np.ndarray, 
-        pose_result: PoseResult,
-        draw_bboxes: bool = True,
-        draw_skeleton: bool = True,
-        bbox_color: Tuple[int, int, int] = (0, 255, 0),
-        skeleton_color: Tuple[int, int, int] = (255, 0, 0)
-    ) -> np.ndarray:
+        video_path: Union[str, Path],
+        output_dir: Optional[Union[str, Path]] = None,
+        save_frames: bool = False,
+        max_frames: Optional[int] = None
+    ) -> VideoResult:
         """
-        Visualize pose estimation results on a frame.
+        Process a video file and extract pose keypoints for all frames.
         
         Args:
-            frame: Input frame as numpy array (BGR format)
-            pose_result: PoseResult object with pose estimation results
-            draw_bboxes: Whether to draw bounding boxes
-            draw_skeleton: Whether to draw pose skeleton
-            bbox_color: Color for bounding boxes (B, G, R)
-            skeleton_color: Color for skeleton (B, G, R) - not used in current rtmlib
+            video_path: Path to the input video file
+            output_dir: Directory to save output files (optional)
+            save_frames: Whether to save annotated frames
+            max_frames: Maximum number of frames to process (None for all)
             
         Returns:
-            Annotated frame as numpy array
+            VideoResult object containing all frame results
+            
+        Raises:
+            FileNotFoundError: If the video file doesn't exist
+            ValueError: If the video cannot be opened
         """
-        canvas = frame.copy()
+        video_path = Path(video_path)
+        if not video_path.exists():
+            raise FileNotFoundError(f"Video file not found: {video_path}")
         
-        if pose_result.num_persons > 0:
-            if draw_bboxes and len(pose_result.bboxes) > 0:
-                canvas = draw_bbox(canvas, pose_result.bboxes)
-                
-            if draw_skeleton and len(pose_result.keypoints) > 0:
-                canvas = draw_skeleton(
-                    canvas, 
-                    pose_result.keypoints, 
-                    pose_result.scores,
+        # Open video
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            raise ValueError(f"Cannot open video file: {video_path}")
+        
+        # Get video properties
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        
+        if max_frames:
+            total_frames = min(total_frames, max_frames)
+        
+        print(f"Processing video: {video_path}")
+        print(f"FPS: {fps}, Total frames: {total_frames}")
+        
+        # Setup output directory if needed
+        if output_dir and save_frames:
+            output_dir = Path(output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Process frames
+        frame_results = []
+        start_time = time.time()
+        
+        for frame_idx in range(total_frames):
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            # Process frame
+            result = self._process_frame(frame, frame_idx)
+            frame_results.append(result)
+            
+            # Save annotated frame if requested
+            if save_frames and output_dir and result.num_persons > 0:
+                annotated_frame = draw_skeleton(
+                    frame.copy(),
+                    result.keypoints,
+                    result.scores,
                     kpt_thr=self.kpt_threshold
                 )
+                frame_filename = output_dir / f"frame_{frame_idx:05d}.jpg"
+                cv2.imwrite(str(frame_filename), annotated_frame)
+            
+            # Progress update
+            if frame_idx % 30 == 0:
+                print(f"Processed frame {frame_idx}/{total_frames}")
         
-        return canvas
+        cap.release()
+        
+        processing_time = time.time() - start_time
+        print(f"Processing completed in {processing_time:.2f} seconds")
+        
+        return VideoResult(
+            frame_results=frame_results,
+            total_frames=len(frame_results),
+            fps=fps,
+            processing_time=processing_time
+        )
     
-    def save_results_to_video(
+    def export_to_json(
         self,
-        video_result: VideoResult,
+        result: Union[PoseResult, VideoResult],
         output_path: Union[str, Path],
-        original_video_path: Union[str, Path],
-        draw_bboxes: bool = True,
-        draw_skeleton: bool = True,
-        codec: str = 'mp4v'
-    ):
+        include_scores: bool = True
+    ) -> None:
         """
-        Save annotated video with pose estimation results.
+        Export pose estimation results to JSON format.
         
         Args:
-            video_result: VideoResult object with pose estimation results
-            output_path: Path for output video file
-            original_video_path: Path to original video file for frame reading
-            draw_bboxes: Whether to draw bounding boxes
-            draw_skeleton: Whether to draw pose skeleton  
-            codec: Video codec to use
+            result: PoseResult or VideoResult object
+            output_path: Path to save the JSON file
+            include_scores: Whether to include confidence scores
         """
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Open original video for reading frames
-        cap = cv2.VideoCapture(str(original_video_path))
-        if not cap.isOpened():
-            raise ValueError(f"Cannot open video file: {original_video_path}")
-            
-        try:
-            # Get video properties
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) 
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            
-            # Initialize video writer
-            fourcc = cv2.VideoWriter_fourcc(*codec)
-            out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
-            
-            print(f"Saving annotated video to {output_path}...")
-            
-            # Process each frame
-            for i, pose_result in enumerate(video_result.frame_results):
-                # Read corresponding frame
-                cap.set(cv2.CAP_PROP_POS_FRAMES, pose_result.frame_idx)
-                ret, frame = cap.read()
-                if not ret:
-                    print(f"Warning: Could not read frame {pose_result.frame_idx}")
-                    continue
-                
-                # Annotate frame
-                annotated_frame = self.visualize_frame(
-                    frame, pose_result, draw_bboxes, draw_skeleton
-                )
-                
-                # Write frame
-                out.write(annotated_frame)
-                
-                if (i + 1) % 10 == 0:
-                    print(f"Saved {i + 1}/{len(video_result.frame_results)} frames")
-            
-            print(f"Video saved successfully to {output_path}")
-            
-        finally:
-            cap.release()
-            out.release()
-    
-    def export_keypoints_to_json(self, video_result: VideoResult, output_path: Union[str, Path]):
-        """
-        Export pose keypoints to JSON format.
+        if isinstance(result, PoseResult):
+            # Single frame/image result
+            data = {
+                "frame_idx": int(result.frame_idx),
+                "num_persons": int(result.num_persons),
+                "keypoints": result.keypoints.tolist(),
+                "bboxes": result.bboxes.tolist()
+            }
+            if include_scores:
+                data["scores"] = result.scores.tolist()
         
-        Args:
-            video_result: VideoResult object with pose estimation results
-            output_path: Path for output JSON file
-        """
-        import json
-        
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Convert results to JSON-serializable format
-        json_data = {
-            'video_info': {
-                'video_path': video_result.video_path,
-                'total_frames': video_result.total_frames,
-                'fps': video_result.fps,
-                'resolution': video_result.resolution
-            },
-            'processing_stats': video_result.processing_stats,
-            'frames': []
-        }
-        
-        for result in video_result.frame_results:
-            frame_data = {
-                'frame_idx': result.frame_idx,
-                'num_persons': result.num_persons,
-                'persons': []
+        elif isinstance(result, VideoResult):
+            # Video result
+            data = {
+                "total_frames": result.total_frames,
+                "fps": result.fps,
+                "processing_time": result.processing_time,
+                "frames": []
             }
             
-            for person_idx in range(result.num_persons):
-                person_data = {
-                    'person_idx': person_idx,
-                    'bbox': result.bboxes[person_idx].tolist() if len(result.bboxes) > person_idx else None,
-                    'keypoints': result.keypoints[person_idx].tolist(),
-                    'scores': result.scores[person_idx].tolist()
+            for frame_result in result.frame_results:
+                frame_data = {
+                    "frame_idx": int(frame_result.frame_idx),
+                    "num_persons": int(frame_result.num_persons),
+                    "keypoints": frame_result.keypoints.tolist(),
+                    "bboxes": frame_result.bboxes.tolist()
                 }
-                frame_data['persons'].append(person_data)
-            
-            json_data['frames'].append(frame_data)
+                if include_scores:
+                    frame_data["scores"] = frame_result.scores.tolist()
+                
+                data["frames"].append(frame_data)
         
-        # Save to JSON file
+        else:
+            raise ValueError("Result must be PoseResult or VideoResult")
+        
+        # Save to JSON
         with open(output_path, 'w') as f:
-            json.dump(json_data, f, indent=2)
+            json.dump(data, f, indent=2)
+        
+        print(f"Exported results to: {output_path}")
+    
+    def get_summary(self, result: Union[PoseResult, VideoResult]) -> str:
+        """
+        Get a summary string of the pose estimation results.
+        
+        Args:
+            result: PoseResult or VideoResult object
             
-        print(f"Keypoints exported to {output_path}")
+        Returns:
+            Formatted summary string
+        """
+        if isinstance(result, PoseResult):
+            # Single frame/image summary
+            summary = f"=== Pose Estimation Summary ===\n"
+            summary += f"Frame: {result.frame_idx}\n"
+            summary += f"Detected persons: {result.num_persons}\n"
+            
+            if result.num_persons > 0:
+                for i in range(result.num_persons):
+                    valid_kpts = np.sum(result.scores[i] > self.kpt_threshold)
+                    avg_confidence = np.mean(result.scores[i][result.scores[i] > self.kpt_threshold])
+                    summary += f"Person {i+1}: {valid_kpts}/133 keypoints, avg confidence: {avg_confidence:.3f}\n"
+        
+        elif isinstance(result, VideoResult):
+            # Video summary
+            total_persons = sum(fr.num_persons for fr in result.frame_results)
+            frames_with_detection = sum(1 for fr in result.frame_results if fr.num_persons > 0)
+            
+            summary = f"=== Video Processing Summary ===\n"
+            summary += f"Total frames: {result.total_frames}\n"
+            summary += f"FPS: {result.fps:.2f}\n"
+            summary += f"Processing time: {result.processing_time:.2f}s\n"
+            summary += f"Frames with detection: {frames_with_detection}/{result.total_frames}\n"
+            summary += f"Total person detections: {total_persons}\n"
+            
+            if total_persons > 0:
+                avg_persons_per_frame = total_persons / result.total_frames
+                summary += f"Average persons per frame: {avg_persons_per_frame:.2f}\n"
+        
+        else:
+            summary = "Invalid result type"
+        
+        return summary
 
 
-# Convenience function for quick usage
-def estimate_poses_from_video(
-    video_path: Union[str, Path],
+# Convenience functions for quick usage
+def estimate_pose_image(
+    image_path: Union[str, Path],
+    output_path: Optional[Union[str, Path]] = None,
     mode: str = 'balanced',
-    max_frames: Optional[int] = None,
-    device: str = 'cpu',
-    **kwargs
-) -> VideoResult:
+    device: str = 'cpu'
+) -> PoseResult:
     """
-    Convenience function to quickly estimate poses from a video file.
+    Quick function to estimate pose in a single image.
     
     Args:
-        video_path: Path to input video file
-        mode: Performance mode ('performance', 'lightweight', 'balanced')
-        max_frames: Maximum number of frames to process (None for all)
-        device: Compute device ('cpu', 'cuda', 'mps')
-        **kwargs: Additional arguments passed to PoseEstimator2D
+        image_path: Path to input image
+        output_path: Path to save annotated image (optional)
+        mode: RTMLib mode ('performance', 'balanced', 'lightweight')
+        device: Device to use ('cpu', 'cuda', 'mps')
         
     Returns:
-        VideoResult object with pose estimation results
+        PoseResult object
     """
-    estimator = PoseEstimator2D(mode=mode, device=device, **kwargs)
-    return estimator.process_video(video_path, max_frames=max_frames)
+    estimator = PoseEstimator2D(mode=mode, device=device)
+    
+    if output_path:
+        return estimator.process_image_with_annotation(image_path, output_path)
+    else:
+        return estimator.process_image(image_path)
+
+
+def estimate_pose_video(
+    video_path: Union[str, Path],
+    output_dir: Optional[Union[str, Path]] = None,
+    mode: str = 'balanced',
+    device: str = 'cpu',
+    max_frames: Optional[int] = None
+) -> VideoResult:
+    """
+    Quick function to estimate pose in a video.
+    
+    Args:
+        video_path: Path to input video
+        output_dir: Directory to save output files (optional)
+        mode: RTMLib mode ('performance', 'balanced', 'lightweight')
+        device: Device to use ('cpu', 'cuda', 'mps')
+        max_frames: Maximum frames to process (None for all)
+        
+    Returns:
+        VideoResult object
+    """
+    estimator = PoseEstimator2D(mode=mode, device=device)
+    return estimator.process_video(
+        video_path,
+        output_dir=output_dir,
+        save_frames=bool(output_dir),
+        max_frames=max_frames
+    )
 
 
 if __name__ == "__main__":
     # Example usage
-    import argparse
+    print("RTMLib Pose Estimator 2D - Test Script")
+    print("=" * 50)
     
-    parser = argparse.ArgumentParser(description="2D Pose Estimation using RTMLib")
-    parser.add_argument("video_path", help="Path to input video file")
-    parser.add_argument("--mode", choices=['performance', 'lightweight', 'balanced'], 
-                       default='balanced', help="Performance mode")
-    parser.add_argument("--device", choices=['cpu', 'cuda', 'mps'], 
-                       default='cpu', help="Compute device")
-    parser.add_argument("--max-frames", type=int, help="Maximum frames to process")
-    parser.add_argument("--output-json", help="Path to save keypoints as JSON")
-    parser.add_argument("--output-video", help="Path to save annotated video")
-    
-    args = parser.parse_args()
-    
-    # Run pose estimation
-    estimator = PoseEstimator2D(mode=args.mode, device=args.device)
-    result = estimator.process_video(args.video_path, max_frames=args.max_frames)
-    
-    # Save results
-    if args.output_json:
-        estimator.export_keypoints_to_json(result, args.output_json)
+    # Test with example image (if available)
+    test_image = Path("../data/test_pose.png")
+    if test_image.exists():
+        print(f"Testing with image: {test_image}")
         
-    if args.output_video:
-        estimator.save_results_to_video(result, args.output_video, args.video_path)
+        estimator = PoseEstimator2D(mode='balanced', device='cpu')
+        result = estimator.process_image(test_image)
+        
+        print(estimator.get_summary(result))
+        
+        # Save annotated result
+        output_path = Path("../output/pose-estimation/test_result.png")
+        estimator.process_image_with_annotation(
+            test_image,
+            output_path
+        )
+        
+        # Export to JSON
+        json_path = Path("../output/pose-estimation/test_result.json")
+        estimator.export_to_json(result, json_path)
+        
+    else:
+        print("No test image found. Please place an image at ../data/test_pose.png")
+        print("Available convenience functions:")
+        print("- estimate_pose_image(image_path, output_path)")
+        print("- estimate_pose_video(video_path, output_dir)")
