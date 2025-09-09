@@ -24,11 +24,15 @@ This module provides 2D whole-body pose estimation capabilities for both **video
 ### **Process a Single Image**
 
 ```bash
-# Simple usage
+# Simple usage with high-quality defaults
 python simple_image_pose.py ../data/test_pose.png
 
-# Specify output path
+# Specify output path (still high-quality by default)
 python simple_image_pose.py ../data/test_pose.png ../output/my_result.png
+
+# Adjust threshold if needed
+python simple_image_pose.py ../data/test_pose.png --threshold 0.5  # More keypoints
+python simple_image_pose.py ../data/test_pose.png --threshold 0.9  # Only highest quality
 ```
 
 ### **Comprehensive Image Analysis**
@@ -104,13 +108,19 @@ output/pose-estimation/
 }
 ```
 
-## ⚙️ **Configuration Options**
+### **Configuration Options**
 
 ### **Performance Modes**
 
-- **`performance`**: Highest accuracy, slower inference
-- **`balanced`**: Good balance of speed and accuracy ⭐ **Recommended**
+- **`performance`**: Highest accuracy, slower inference ⭐ **Default & Recommended**
+- **`balanced`**: Good balance of speed and accuracy
 - **`lightweight`**: Fastest inference, lower accuracy
+
+### **Confidence Thresholds**
+
+- **`0.8`**: High quality keypoints only ⭐ **Default**
+- **`0.5`**: Good balance of coverage and quality
+- **`0.3`**: Maximum coverage, includes lower confidence detections
 
 ### **Backends**
 
@@ -128,11 +138,12 @@ output/pose-estimation/
 
 Based on test image (1326x1916 pixels):
 
-| Configuration | Time | Keypoints Detected | Avg Confidence |
-|---------------|------|-------------------|----------------|
-| `balanced + cpu` | ~2s | 105/133 | 0.840 |
-| `performance + cpu` | ~4s | 110/133 | 0.865 |
-| `lightweight + cpu` | ~1s | 95/133 | 0.780 |
+| Configuration | Time | Keypoints Detected | Avg Confidence | Quality |
+|---------------|------|-------------------|----------------|---------|
+| `performance + 0.8` ⭐ | ~4s | **117/133** | **6.522** | **High** |
+| `performance + 0.5` | ~4s | 132/133 | 5.857 | Mixed |
+| `balanced + 0.8` | ~2s | 110/133 | 6.200 | High |
+| `lightweight + 0.8` | ~1s | 95/133 | 5.800 | High |
 
 ## 🔍 **Detailed Usage Examples**
 
