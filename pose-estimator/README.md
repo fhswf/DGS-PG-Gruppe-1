@@ -13,43 +13,63 @@ This module provides 2D whole-body pose estimation capabilities for both **video
 
 ## 📁 **Files Overview**
 
-- **`pose_estimator_2d.py`** - Main PoseEstimator2D class for video processing
-- **`test_image_pose.py`** - Extended ImagePoseEstimator for single images
-- **`simple_image_pose.py`** - Command-line tool for quick image processing
+- **`pose_estimator_2d.py`** - ⭐ **Main PoseEstimator2D class** (recommended)
+- **`simple_image_pose.py`** - Command-line tool using PoseEstimator2D
+- **`test_image_pose.py`** - Alternative implementation for testing
 - **`quick_start_demo.py`** - Demo script
 - **`example_usage.py`** - Usage examples
 
 ## 🚀 **Quick Start**
 
-### **Process a Single Image**
+### **Command-Line Usage (Recommended)**
 
 ```bash
-# Simple usage with high-quality defaults
+# Simple usage with high-quality defaults (performance mode, 0.8 threshold)
 python simple_image_pose.py ../data/test_pose.png
 
-# Specify output path (still high-quality by default)
-python simple_image_pose.py ../data/test_pose.png ../output/my_result.png
+# Data-only analysis (no image output)
+python simple_image_pose.py ../data/test_pose.png --no-image
 
-# Adjust threshold if needed
+# Custom output path
+python simple_image_pose.py ../data/test_pose.png --output my_result.png
+
+# Export keypoints as JSON
+python simple_image_pose.py ../data/test_pose.png --json keypoints.json
+
+# Adjust quality settings
 python simple_image_pose.py ../data/test_pose.png --threshold 0.5  # More keypoints
-python simple_image_pose.py ../data/test_pose.png --threshold 0.9  # Only highest quality
+python simple_image_pose.py ../data/test_pose.png --mode balanced   # Faster processing
 ```
 
-### **Comprehensive Image Analysis**
-
-```bash
-# Run detailed analysis with JSON export
-python test_image_pose.py
-```
-
-### **Process a Video**
+### **Programmatic Usage**
 
 ```python
 from pose_estimator_2d import PoseEstimator2D
 
-estimator = PoseEstimator2D(mode='balanced', device='cpu')
-result = estimator.process_video('../data/video.mp4')
-print(f"Processed {result.total_frames} frames")
+# Initialize estimator
+estimator = PoseEstimator2D(
+    mode='performance',     # performance, balanced, or lightweight
+    device='cpu',          # cpu, cuda, or mps
+    kpt_threshold=0.8      # confidence threshold
+)
+
+# Process single image (data only)
+result = estimator.process_image('../data/test_pose.png')
+print(f"Detected {result.num_persons} persons")
+
+# Process image with annotation
+result = estimator.process_image_with_annotation(
+    image_path='../data/test_pose.png',
+    output_path='../output/annotated.png'
+)
+
+# Process video
+video_result = estimator.process_video('../data/video.mp4')
+print(f"Processed {video_result.total_frames} frames")
+```
+# Process video
+video_result = estimator.process_video('../data/video.mp4')
+print(f"Processed {video_result.total_frames} frames")
 ```
 
 ## 🔧 **Installation**
@@ -62,6 +82,69 @@ pip install rtmlib
 pip install opencv-python numpy pathlib
 ```
 
+## 📊 **PoseEstimator2D Class Reference**
+
+### **Initialization Parameters**
+
+```python
+PoseEstimator2D(
+    mode='performance',          # Model quality: 'performance', 'balanced', 'lightweight'
+    backend='onnxruntime',       # Backend: 'onnxruntime', 'opencv', 'openvino'
+    device='cpu',               # Device: 'cpu', 'cuda', 'mps'
+    kpt_threshold=0.8,          # Confidence threshold for keypoint detection
+    to_openpose=False           # Convert to OpenPose format (optional)
+)
+```
+
+### **Main Methods**
+
+#### **`process_image(image_path)`**
+Process image and return keypoint data only.
+
+```python
+result = estimator.process_image('../data/test_pose.png')
+# Returns: PoseResult with keypoints, scores, bboxes, etc.
+```
+
+#### **`process_image_with_annotation(image_path, output_path=None)`**
+Process image and optionally save annotated version.
+
+```python
+# Save annotated image
+result = estimator.process_image_with_annotation(
+    '../data/test_pose.png', 
+    '../output/annotated.png'
+)
+
+# Process without saving (data only)
+result = estimator.process_image_with_annotation('../data/test_pose.png', None)
+```
+
+#### **`process_video(video_path, output_path=None)`**
+Process entire video file.
+
+```python
+video_result = estimator.process_video('../data/video.mp4', '../output/annotated_video.mp4')
+```
+
+### **Result Objects**
+
+#### **PoseResult (for images)**
+```python
+result.keypoints        # Array of keypoint coordinates [num_persons, 133, 2]
+result.scores          # Confidence scores [num_persons, 133]
+result.bboxes          # Bounding boxes [num_persons, 4]
+result.num_persons     # Number of detected persons
+```
+
+#### **VideoResult (for videos)**
+```python
+video_result.frame_results    # List of PoseResult objects (one per frame)
+video_result.total_frames     # Total number of frames processed
+video_result.fps             # Frames per second
+video_result.processing_time # Total processing time in seconds
+```
+
 ## 📊 **Supported Keypoint Groups**
 
 | Group | Keypoints | Range | Color |
@@ -72,13 +155,29 @@ pip install opencv-python numpy pathlib
 | **Right Hand** | 21 | 106-126 | 🟡 Yellow |
 | **Feet** | 6 | 127-132 | 🟣 Purple |
 
+**Note**: All 133 keypoint coordinates are always returned, but only those above the confidence threshold are considered "detected".
+
 ## 🎨 **Output Examples**
 
-The image processing creates:
+### **Command-Line Output Structure**
 
-1. **Annotated Image**: Visual representation with keypoints and skeleton
-2. **JSON Data**: Detailed keypoint coordinates and confidence scores
-3. **Console Summary**: Quick overview of detection results
+```
+output/pose-estimation/
+├── annotated_test_pose.png     # Annotated image with keypoints
+└── keypoints_test_pose.json    # JSON with all keypoint data (if --json used)
+```
+
+### **JSON Export Structure**
+
+```json
+{
+  "frame_idx": 0,
+  "num_persons": 1,
+  "keypoints": [[x1, y1], [x2, y2], ...],  // Always 133 coordinate pairs
+  "scores": [0.95, 0.87, 0.23, ...],       // Always 133 confidence scores
+  "bboxes": [[x1, y1, x2, y2, conf]]       // Bounding boxes
+}
+```
 
 ### **Sample Output Structure**
 
