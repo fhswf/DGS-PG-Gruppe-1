@@ -41,6 +41,36 @@ Each frame is split into left and right images, and pose coordinates are extract
 
 If `show_first_annotated=True`, the first frame's left and right images will be saved as PNG files (`first_frame_left_annotated.png` and `first_frame_right_annotated.png`) with pose estimations overlaid in the current directory.
 
+#### **3D SBS Video Output Format**
+
+The `process_side_by_side_video` method returns a list of dictionaries, where each dictionary contains pose data for both left and right images of a frame:
+
+```json
+[
+  {
+    "frame": 0,
+    "left": {
+      "num_persons": 1,
+      "keypoints": [[[x1, y1], [x2, y2], ...]], // 133 keypoints for each person
+      "scores": [[0.95, 0.87, ...]], // 133 confidence scores for each person
+      "bboxes": [[x1, y1, x2, y2, conf]] // Bounding boxes for each person
+    },
+    "right": {
+      "num_persons": 1,
+      "keypoints": [[[x1, y1], [x2, y2], ...]], // 133 keypoints for each person
+      "scores": [[0.95, 0.87, ...]], // 133 confidence scores for each person
+      "bboxes": [[x1, y1, x2, y2, conf]] // Bounding boxes for each person
+    }
+  },
+  {
+    "frame": 1,
+    "left": { ... },
+    "right": { ... }
+  }
+  // ... more frames
+]
+```
+
 ### **Process a Single Image**
 
 ```bash
