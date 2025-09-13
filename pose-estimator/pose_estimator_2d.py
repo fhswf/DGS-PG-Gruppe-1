@@ -60,6 +60,101 @@ class VideoResult:
 
 
 class PoseEstimator2D:
+    def process_side_by_side_video(
+        self,
+        video_path: Union[str, Path],
+        output_json_path: Optional[Union[str, Path]] = None,
+        max_frames: Optional[int] = None,
+        show_first_annotated: bool = False
+    ) -> list:
+        """
+        Process a 3D side-by-side video, extracting poses for left and right frames.
+        Args:
+            video_path (str or Path): Path to the input video.
+            output_json_path (str or Path, optional): Path to save the output JSON with pose data.
+            max_frames (int, optional): Maximum number of frames to process.
+            show_first_annotated (bool, optional): If True, display the first frame with annotated poses for left and right images.
+        Returns:
+            list: List of dicts with frame-wise pose data for left and right images.
+        """
+        video_path = Path(video_path)
+        if not video_path.exists():
+            raise FileNotFoundError(f"Video file not found: {video_path}")
+
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            raise ValueError(f"Cannot open video file: {video_path}")
+
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if max_frames:
+            total_frames = min(total_frames, max_frames)
+
+        results = []
+        frame_idx = 0
+        print(f"Processing side-by-side video: {video_path}")
+        first_annotated_shown = False
+        while frame_idx < total_frames:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            h, w, _ = frame.shape
+            mid = w // 2
+            left_img = frame[:, :mid]
+            right_img = frame[:, mid:]
+
+            left_result = self._process_frame(left_img, frame_idx)
+            right_result = self._process_frame(right_img, frame_idx)
+
+            # Save annotated first frame if requested
+            if show_first_annotated and not first_annotated_shown:
+                try:
+                    from rtmlib import draw_skeleton
+                    left_annot = draw_skeleton(
+                        left_img.copy(),
+                        left_result.keypoints,
+                        left_result.scores,
+                        kpt_thr=self.kpt_threshold
+                    )
+                    right_annot = draw_skeleton(
+                        right_img.copy(),
+                        right_result.keypoints,
+                        right_result.scores,
+                        kpt_thr=self.kpt_threshold
+                    )
+                    cv2.imwrite("first_frame_left_annotated.png", left_annot)
+                    cv2.imwrite("first_frame_right_annotated.png", right_annot)
+                    print("Saved first_frame_left_annotated.png and first_frame_right_annotated.png")
+                except Exception as e:
+                    print(f"Could not save annotated first frame: {e}")
+                first_annotated_shown = True
+
+            results.append({
+                "frame": frame_idx,
+                "left": {
+                    "num_persons": left_result.num_persons,
+                    "keypoints": left_result.keypoints.tolist() if hasattr(left_result.keypoints, 'tolist') else left_result.keypoints,
+                    "scores": left_result.scores.tolist() if hasattr(left_result.scores, 'tolist') else left_result.scores,
+                    "bboxes": left_result.bboxes.tolist() if hasattr(left_result.bboxes, 'tolist') else left_result.bboxes
+                },
+                "right": {
+                    "num_persons": right_result.num_persons,
+                    "keypoints": right_result.keypoints.tolist() if hasattr(right_result.keypoints, 'tolist') else right_result.keypoints,
+                    "scores": right_result.scores.tolist() if hasattr(right_result.scores, 'tolist') else right_result.scores,
+                    "bboxes": right_result.bboxes.tolist() if hasattr(right_result.bboxes, 'tolist') else right_result.bboxes
+                }
+            })
+            if frame_idx % 30 == 0:
+                print(f"Processed frame {frame_idx}/{total_frames}")
+            frame_idx += 1
+
+        cap.release()
+
+        if output_json_path:
+            with open(output_json_path, "w") as f:
+                json.dump(results, f, indent=2)
+
+        print(f"Processing completed. Total frames: {len(results)}")
+        return results
     """
     A wrapper class for RTMLib pose estimation.
     
