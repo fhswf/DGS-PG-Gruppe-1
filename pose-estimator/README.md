@@ -53,6 +53,15 @@ python simple_image_pose.py ../data/test_pose.png ../output/my_result.png
 # Adjust threshold if needed
 python simple_image_pose.py ../data/test_pose.png --threshold 0.5  # More keypoints
 python simple_image_pose.py ../data/test_pose.png --threshold 0.9  # Only highest quality
+
+# Data-only analysis (no image output)
+python simple_image_pose.py ../data/test_pose.png --no-image
+
+# Custom output path
+python simple_image_pose.py ../data/test_pose.png --output my_result.png
+
+# Export keypoints as JSON
+python simple_image_pose.py ../data/test_pose.png --json keypoints.json
 ```
 
 ### **Comprehensive Image Analysis**
@@ -62,14 +71,36 @@ python simple_image_pose.py ../data/test_pose.png --threshold 0.9  # Only highes
 python test_image_pose.py
 ```
 
+### **Advanced Image Annotation Options**
+
+You can control annotation details with extra arguments:
+
+```python
+result = estimator.process_image_with_annotation(
+    '../data/test_pose.png',
+    output_path='../output/annotated.png',
+    draw_bbox=True,            # Draw bounding boxes (default: True)
+    draw_keypoints=True,       # Draw keypoints/skeleton (default: True)
+    keypoint_threshold=0.5     # Only draw keypoints above this confidence (default: 0.3)
+)
+```
+
 ### **Process a Video**
 
 ```python
 from pose_estimator_2d import PoseEstimator2D
 
 estimator = PoseEstimator2D(mode='balanced', device='cpu')
-result = estimator.process_video('../data/video.mp4')
+result = estimator.process_video(
+    '../data/video.mp4',
+    output_dir='../output/annotated_frames',  # Save annotated frames here (optional)
+    save_frames=True,                        # Set to True to save annotated frames
+    max_frames=100                           # Limit number of frames (optional)
+)
 print(f"Processed {result.total_frames} frames")
+
+# You can also process the full video without saving frames:
+# result = estimator.process_video('../data/video.mp4')
 ```
 
 ## 🔧 **Installation**
@@ -82,7 +113,57 @@ pip install rtmlib
 pip install opencv-python numpy pathlib
 ```
 
-## 📊 **Supported Keypoint Groups**
+## 📊 PoseEstimator2D Class Reference
+
+**Initialization Parameters**
+```python
+PoseEstimator2D(
+    mode='performance',          # Model quality: 'performance', 'balanced', 'lightweight'
+    backend='onnxruntime',       # Backend: 'onnxruntime', 'opencv', 'openvino'
+    device='cpu',                # Device: 'cpu', 'cuda', 'mps'
+    kpt_threshold=0.8,           # Confidence threshold for keypoint detection
+    to_openpose=False            # Convert to OpenPose format (optional)
+)
+```
+
+**Main Methods**
+- `process_image(image_path)`: Process image and return keypoint data only.
+- `process_image_with_annotation(image_path, output_path=None, draw_bbox=True, draw_keypoints=True, keypoint_threshold=0.3)`: Process image and optionally save annotated version, with control over annotation details.
+- `process_video(video_path, output_dir=None, save_frames=False, max_frames=None)`: Process entire video file, optionally save annotated frames.
+- `process_side_by_side_video(...)`: Process 3D side-by-side video (see above).
+- `export_to_json(result, output_path)`: Export a PoseResult or VideoResult to a JSON file.
+- `get_summary(result)`: Get a human-readable summary of a PoseResult or VideoResult.
+
+**Result Objects**
+- `PoseResult` (for images):  
+  - `result.keypoints` – Array of keypoint coordinates [num_persons, 133, 2]  
+  - `result.scores` – Confidence scores [num_persons, 133]  
+  - `result.bboxes` – Bounding boxes [num_persons, 4]  
+  - `result.num_persons` – Number of detected persons  
+- `VideoResult` (for videos):  
+  - `video_result.frame_results` – List of PoseResult objects (one per frame)  
+  - `video_result.total_frames` – Total number of frames processed  
+  - `video_result.fps` – Frames per second  
+  - `video_result.processing_time` – Total processing time in seconds  
+
+## � Exporting Results to JSON
+
+You can export any PoseResult or VideoResult to a JSON file:
+
+```python
+estimator.export_to_json(result, 'output.json')
+```
+
+## 📝 Getting a Summary of Results
+
+You can get a human-readable summary string for any result:
+
+```python
+summary = estimator.get_summary(result)
+print(summary)
+```
+
+## �📊 **Supported Keypoint Groups**
 
 | Group | Keypoints | Range | Color |
 |-------|-----------|-------|-------|
@@ -91,6 +172,8 @@ pip install opencv-python numpy pathlib
 | **Left Hand** | 21 | 85-105 | 🔴 Red |
 | **Right Hand** | 21 | 106-126 | 🟡 Yellow |
 | **Feet** | 6 | 127-132 | 🟣 Purple |
+
+> **Note:** All 133 keypoint coordinates are always returned, but only those above the confidence threshold are considered "detected".
 
 ## 🎨 **Output Examples**
 
@@ -125,6 +208,18 @@ output/pose-estimation/
       "visible_keypoints": 105
     }
   ]
+}
+```
+
+### **Frame-level JSON Export Structure (for videos)**
+
+```json
+{
+  "frame_idx": 0,
+  "num_persons": 1,
+  "keypoints": [[x1, y1], [x2, y2], ...],  // Always 133 coordinate pairs
+  "scores": [0.95, 0.87, 0.23, ...],       // Always 133 confidence scores
+  "bboxes": [[x1, y1, x2, y2, conf]]       // Bounding boxes
 }
 ```
 
@@ -232,6 +327,10 @@ for image_path in input_dir.glob('*.png'):
    - Use `performance` mode for better accuracy
    - Ensure good image quality
    - Check for occlusions or motion blur
+
+5. **Other tips**
+  - Try different performance modes (`performance`, `balanced`, `lightweight`)
+  - Use the CLI options for more control over output and quality
 
 ## 🤝 **Integration with Label Studio**
 
