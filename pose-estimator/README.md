@@ -21,6 +21,26 @@ This module provides 2D whole-body pose estimation capabilities for both **video
 
 ## 🚀 **Quick Start**
 
+### **Process a 3D Side-by-Side Video**
+
+You can process 3D side-by-side (SBS) videos, where each frame contains a left and right image, using the following method:
+
+```python
+from pose_estimator_2d import PoseEstimator2D
+
+estimator = PoseEstimator2D(mode='balanced', device='cpu')
+results = estimator.process_side_by_side_video(
+  '../data/3d_sbs_video.mp4',
+  output_json_path='../output/poses_sbs.json',
+  show_first_annotated=True  # Show annotated left/right images for the first frame
+)
+print(f"Processed {len(results)} frames (left/right)")
+```
+
+Each frame is split into left and right images, and pose coordinates are extracted for both. The results are saved as a JSON file if `output_json_path` is provided.
+
+If `show_first_annotated=True`, the first frame's left and right images will be saved as PNG files (`first_frame_left_annotated.png` and `first_frame_right_annotated.png`) with pose estimations overlaid in the current directory.
+
 ### **Process a Single Image**
 
 ```bash
