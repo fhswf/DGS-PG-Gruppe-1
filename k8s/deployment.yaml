@@ -6,7 +6,7 @@ metadata:
     app: rtmlib-ml-backend
     version: v1
 spec:
-  replicas: 1
+  replicas: 5
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -54,10 +54,10 @@ spec:
         resources:
           requests:
             memory: "2Gi"
-            cpu: "500m"
+            cpu: "1500m"
           limits:
             memory: "4Gi"
-            cpu: "2000m"
+            cpu: "3000m"
         livenessProbe:
           httpGet:
             path: /health
