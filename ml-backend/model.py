@@ -98,19 +98,18 @@ class RTMLibPoseEstimator(LabelStudioMLBase):
 		face_labels = [f"face_{i}" for i in range(68)]
 		#left_hand_labels = [f"left_hand_{i}" for i in range(21)]
 		#right_hand_labels = [f"right_hand_{i}" for i in range(21)]
-		left_hand_labels = ["leftthumb0", "leftthumb1", "leftthumb2", "leftthumb3", 
-                   "leftindex4", "leftindex5", "leftindex6", "leftindex7", 
-                   "leftmiddle8", "leftmiddle9", "leftmiddle10", "leftmiddle11", 
-                   "leftring12", "leftring13", "leftring14", "leftring15", 
-                   "leftlittle16", "leftlittle17", "leftlittle18", "leftlittle19", 
-                   "leftwrist20"]
+		left_hand_labels = ["left_wrist_0","left_thumb_1", "left_thumb_2", "left_thumb_3", 
+					"left_thumb_4", "left_index_5", "left_index_6", "left_index_7", "left_index_8",
+    				"left_middle_9", "left_middle_10", "left_middle_11", "left_middle_12",
+    				"left_ring_13", "left_ring_14", "left_ring_15", "left_ring_16",
+    				"left_little_17", "left_little_18", "left_little_19", "left_little_20"]
 
-		right_hand_labels = ["rightthumb0", "rightthumb1", "rightthumb2", "rightthumb3", 
-                    "rightindex4", "rightindex5", "rightindex6", "rightindex7", 
-                    "rightmiddle8", "rightmiddle9", "rightmiddle10", "rightmiddle11", 
-                    "rightring12", "rightring13", "rightring14", "rightring15", 
-                    "rightlittle16", "rightlittle17", "rightlittle18", "rightlittle19", 
-                    "rightwrist20"]
+		right_hand_labels = ["right_wrist_0", "right_thumb_1", "right_thumb_2", "right_thumb_3", 
+					"right_thumb_4", "right_index_5", "right_index_6", "right_index_7", "right_index_8",
+   					"right_middle_9", "right_middle_10", "right_middle_11", "right_middle_12",
+    				"right_ring_13", "right_ring_14", "right_ring_15", "right_ring_16",
+    				"right_little_17", "right_little_18", "right_little_19", "right_little_20"]
+
 		return body_labels + foot_labels + face_labels + left_hand_labels + right_hand_labels
 
 	def _download_image(self, url: str) -> Optional[np.ndarray]:
