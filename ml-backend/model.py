@@ -96,8 +96,21 @@ class RTMLibPoseEstimator(LabelStudioMLBase):
 			"right_heel",
 		]
 		face_labels = [f"face_{i}" for i in range(68)]
-		left_hand_labels = [f"left_hand_{i}" for i in range(21)]
-		right_hand_labels = [f"right_hand_{i}" for i in range(21)]
+		#left_hand_labels = [f"left_hand_{i}" for i in range(21)]
+		#right_hand_labels = [f"right_hand_{i}" for i in range(21)]
+		left_hand_labels = ["leftthumb0", "leftthumb1", "leftthumb2", "leftthumb3", 
+                   "leftindex4", "leftindex5", "leftindex6", "leftindex7", 
+                   "leftmiddle8", "leftmiddle9", "leftmiddle10", "leftmiddle11", 
+                   "leftring12", "leftring13", "leftring14", "leftring15", 
+                   "leftlittle16", "leftlittle17", "leftlittle18", "leftlittle19", 
+                   "leftwrist20"]
+
+		right_hand_labels = ["rightthumb0", "rightthumb1", "rightthumb2", "rightthumb3", 
+                    "rightindex4", "rightindex5", "rightindex6", "rightindex7", 
+                    "rightmiddle8", "rightmiddle9", "rightmiddle10", "rightmiddle11", 
+                    "rightring12", "rightring13", "rightring14", "rightring15", 
+                    "rightlittle16", "rightlittle17", "rightlittle18", "rightlittle19", 
+                    "rightwrist20"]
 		return body_labels + foot_labels + face_labels + left_hand_labels + right_hand_labels
 
 	def _download_image(self, url: str) -> Optional[np.ndarray]:
