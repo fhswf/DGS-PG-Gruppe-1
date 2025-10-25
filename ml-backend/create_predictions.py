@@ -13,6 +13,7 @@ import numpy as np
 import cv2
 import requests
 from PIL import Image
+import time
 
 # Load environment variables from .env file
 try:
@@ -252,6 +253,11 @@ if START_TASK_ID is not None and START_TASK_ID != "":
 else:
     START_TASK_ID = None
 
+# Rate limiting configuration
+REQUEST_DELAY_SECONDS = float(os.environ.get("REQUEST_DELAY_SECONDS", "1.0"))
+MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "3"))
+MAX_BACKOFF_DELAY = int(os.environ.get("MAX_BACKOFF_DELAY", "60"))
+
 # ------------------------------
 # Set environment variables for ML model configuration (optional, uses defaults if not set)
 # ------------------------------
@@ -361,13 +367,34 @@ def process_task(task):
     # Log the prediction payload
     # print(f"Sending prediction for task {task_id}: {payload}")
 
-    # Send prediction to Label Studio using SDK
-    try:
-        prediction_response = ls_client.predictions.create(**payload)
-        return True
-    except Exception as e:
-        print(f"❌ Failed for task {task_id}: {e}")
-        return False
+    # Send prediction to Label Studio using SDK with retry logic
+    for attempt in range(MAX_RETRIES):
+        try:
+            prediction_response = ls_client.predictions.create(**payload)
+            # Add delay between successful requests to prevent overwhelming the server
+            if REQUEST_DELAY_SECONDS > 0:
+                time.sleep(REQUEST_DELAY_SECONDS)
+            return True
+        except Exception as e:
+            error_msg = str(e)
+            if "503" in error_msg or "no available server" in error_msg:
+                # Server overload - use exponential backoff
+                if attempt < MAX_RETRIES - 1:
+                    backoff_delay = min(REQUEST_DELAY_SECONDS * (2 ** attempt), MAX_BACKOFF_DELAY)
+                    print(f"⚠️  Server overload (503) for task {task_id}, retrying in {backoff_delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                    time.sleep(backoff_delay)
+                    continue
+                else:
+                    print(f"❌ Failed for task {task_id} after {MAX_RETRIES} attempts: {e}")
+                    return False
+            else:
+                # Other error - don't retry
+                print(f"❌ Failed for task {task_id}: {e}")
+                return False
+
+    # This should not be reached, but just in case
+    print(f"❌ Failed for task {task_id} after all retries")
+    return False
 
 # ------------------------------
 # Create predictions for tasks
