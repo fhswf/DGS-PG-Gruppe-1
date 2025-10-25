@@ -359,13 +359,11 @@ def process_task(task):
     }
 
     # Log the prediction payload
-    print(f"Sending prediction for task {task_id}: {payload}")
+    # print(f"Sending prediction for task {task_id}: {payload}")
 
     # Send prediction to Label Studio using SDK
     try:
         prediction_response = ls_client.predictions.create(**payload)
-        print(f"✅ Prediction sent for task {task_id}")
-        print(f"Label Studio response: {prediction_response}")
         return True
     except Exception as e:
         print(f"❌ Failed for task {task_id}: {e}")
