@@ -56,14 +56,20 @@ class RTMLibPoseEstimator(LabelStudioMLBase):
 		if Wholebody is None:
 			raise RuntimeError("rtmlib is not installed")
 		try:
+			print("Initializing RTMLib Wholebody model...")
+			print(f"  Device: {self.device}")
+			print(f"  Backend: {self.backend}")
+			print(f"  Mode: {self.mode}")
+			
 			self.pose_estimator = Wholebody(
 				to_openpose=False,  # mmpose-style ordering
 				mode=self.mode,
 				backend=self.backend,
 				device=self.device,
 			)
-			logger.info("RTMLib Wholebody model initialized")
+			print("RTMLib Wholebody model initialized successfully")
 		except Exception as e:
+			print(f"Failed to initialize RTMLib model: {e}")
 			logger.exception(f"Failed to initialize RTMLib model: {e}")
 			raise
 
