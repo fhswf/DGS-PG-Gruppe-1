@@ -1,5 +1,6 @@
 from pose_estimator_2d import PoseEstimator2D
 from pose_estimator_3d import convert_2d_poses_to_3d
+from pose_3d_visualizer import plot_3d_pose_from_json, plot_multiple_views
 import json
 
 print("=== Testing 2D to 3D Pose Conversion ===")
@@ -9,7 +10,7 @@ print("\n1. Calculating 2D poses...")
 estimator_2d = PoseEstimator2D()
 
 # Für ein Bild verwenden wir process_image statt process_side_by_side_video
-result_2d = estimator_2d.process_image("hocke.jpg")
+result_2d = estimator_2d.process_image("Nathalie.png")
 
 # Manuell das JSON im gleichen Format wie process_side_by_side_video erstellen
 results_2d_list = [{
@@ -34,7 +35,7 @@ with open("poses_2d.json", "w") as f:
 
 print(f"2D poses saved. Detected {result_2d.num_persons} person(s)")
 
-bild = estimator_2d.process_image_with_annotation(image_path="hocke.jpg", output_path= "hocke-annotated.jpg")
+bild = estimator_2d.process_image_with_annotation(image_path="Nathalie.png", output_path= "Nathalie-annotated.png")
 
 # 2. Jetzt 2D-zu-3D Konvertierung
 print("\n2. Converting 2D poses to 3D...")
@@ -46,3 +47,17 @@ results_3d = convert_2d_poses_to_3d(
 
 print("3D-Posen erfolgreich generiert!")
 print(results_3d)
+
+# 3. 3D Visualisierung
+print("\n3. Creating 3D visualizations...")
+
+# Einzelner 3D-Plot (combined view)
+print("Plotting 3D pose (combined view)...")
+plot_3d_pose_from_json(
+    "poses_3d.json",
+    frame_idx=0,
+    view='combined',
+    output_path="Nathalie_3d_combined.png",
+    z_scale=5.0,
+    show_plot=True
+)
