@@ -224,48 +224,77 @@ class PoseEstimator2D:
                 )
             
             # Ensure correct shape
-            keypoints = np.array(keypoints)
-            scores = np.array(scores)
-            
+            keypoints=np.array(keypoints)
+            scores=np.array(scores)
+            logits=np.array(scores)
+            confidence_scores=1 / (1 + np.exp(-logits))  # Sigmoid für Prozent
+
             if keypoints.ndim == 2:
-                keypoints = keypoints[np.newaxis, ...]
-            if scores.ndim == 1:
-                scores = scores[np.newaxis, ...]
-            
-            num_persons = keypoints.shape[0]
-            
+                keypoints=keypoints[np.newaxis, ...]
+            if confidence_scores.ndim == 1:
+                confidence_scores=confidence_scores[np.newaxis, ...]
+
+            num_persons=keypoints.shape[0]
+
             # Calculate bounding boxes from keypoints
-            bboxes = []
+            bboxes=[]
             for i in range(num_persons):
-                valid_kpts = keypoints[i][scores[i] > self.kpt_threshold]
+                # Erstelle eine Kopie der Keypoints für diese Person
+                kpts=keypoints[i].copy()
+
+                # confidence_scores[i] sollte Shape (133,) haben
+                conf_scores_flat=confidence_scores[i]
+
+                # Setze Keypoints auf 0 wo die Konfidenz unter dem Threshold liegt
+                low_confidence_mask=conf_scores_flat <= self.kpt_threshold
+
+                # Korrekte Zuweisung - setze beide x und y Koordinaten auf 0
+                kpts[low_confidence_mask, 0]=0  # x-Koordinate
+                kpts[low_confidence_mask, 1]=0  # y-Koordinate
+
+                # WICHTIG: Schreibe die modifizierten Keypoints zurück in das keypoints Array
+                keypoints[i]=kpts
+
+                # Finde Keypoints die nicht 0 sind (valide Keypoints)
+                non_zero_mask=(kpts != 0).any(axis=1)
+                valid_kpts=kpts[non_zero_mask]
+
                 if len(valid_kpts) > 0:
-                    x_coords = valid_kpts[:, 0]
-                    y_coords = valid_kpts[:, 1]
-                    x1, y1 = np.min(x_coords), np.min(y_coords)
-                    x2, y2 = np.max(x_coords), np.max(y_coords)
+                    x_coords=valid_kpts[:, 0]
+                    y_coords=valid_kpts[:, 1]
+                    x1, y1=np.min(x_coords), np.min(y_coords)
+                    x2, y2=np.max(x_coords), np.max(y_coords)
                     # Add some padding
-                    padding = 20
-                    x1 = max(0, x1 - padding)
-                    y1 = max(0, y1 - padding)
-                    x2 = min(frame.shape[1], x2 + padding)
-                    y2 = min(frame.shape[0], y2 + padding)
-                    confidence = np.mean(scores[i][scores[i] > self.kpt_threshold])
+                    padding=20
+                    x1=max(0, x1 - padding)
+                    y1=max(0, y1 - padding)
+                    x2=min(frame.shape[1], x2 + padding)
+                    y2=min(frame.shape[0], y2 + padding)
+
+                    # Berechne Konfidenz nur für Keypoints über dem Threshold
+                    high_confidence_scores=conf_scores_flat[conf_scores_flat > self.kpt_threshold]
+                    confidence=np.mean(high_confidence_scores) if len(high_confidence_scores) > 0 else 0
                     bboxes.append([x1, y1, x2, y2, confidence])
+
                 else:
                     bboxes.append([0, 0, 0, 0, 0])
-            
-            bboxes = np.array(bboxes) if bboxes else np.empty((0, 5))
-            
+
+            bboxes_array=np.array(bboxes)
+
+            for j in range(keypoints.shape[1]):
+                if (keypoints[0][j] == [0, 0]).all():
+                    print(f"Keypoint {j}: (0, 0) - Score: {confidence_scores[0][j]:.3f}")
+
             return PoseResult(
                 frame_idx=frame_idx,
-                keypoints=keypoints,
-                scores=scores,
-                bboxes=bboxes,
+                keypoints=keypoints,  # Jetzt mit den modifizierten Keypoints
+                scores=confidence_scores,
+                bboxes=bboxes_array,
                 num_persons=num_persons
             )
             
         except Exception as e:
-            print(f"Error processing frame {frame_idx}: {e}")
+            print(f"Error processing frame {frame_idx}: {e.with_traceback()}")
             # Return empty result on error
             return PoseResult(
                 frame_idx=frame_idx,

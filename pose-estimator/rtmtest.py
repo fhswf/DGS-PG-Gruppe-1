@@ -5,12 +5,16 @@ import json
 
 print("=== Testing 2D to 3D Pose Conversion ===")
 
+#file = "V.png"
+#file = "../hocke.jpg"
+file = "../mensch.jpg"
+
 # 1. Zuerst 2D-Posen mit dem originalen Code berechnen
 print("\n1. Calculating 2D poses...")
-estimator_2d = PoseEstimator2D()
+estimator_2d = PoseEstimator2D(kpt_threshold=0.9)
 
 # Für ein Bild verwenden wir process_image statt process_side_by_side_video
-result_2d = estimator_2d.process_image("Nathalie.png")
+result_2d = estimator_2d.process_image(file)
 
 # Manuell das JSON im gleichen Format wie process_side_by_side_video erstellen
 results_2d_list = [{
@@ -35,7 +39,7 @@ with open("poses_2d.json", "w") as f:
 
 print(f"2D poses saved. Detected {result_2d.num_persons} person(s)")
 
-bild = estimator_2d.process_image_with_annotation(image_path="Nathalie.png", output_path= "Nathalie-annotated.png")
+bild = estimator_2d.process_image_with_annotation(image_path=file, output_path= "Nathalie-annotated.png")
 
 # 2. Jetzt 2D-zu-3D Konvertierung
 print("\n2. Converting 2D poses to 3D...")
