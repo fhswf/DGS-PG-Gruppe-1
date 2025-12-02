@@ -22,6 +22,84 @@ try:
 except ImportError:
     raise ImportError("RTMLib not found. Please install with: pip install rtmlib")
 
+DEFAULT_IGNORE_KEYPOINTS = list(range(13, 23))  # Beine/Füße/Zehen
+
+def filter_keypoints(keypoints, scores, ignore_indices=None):
+    """
+    Setzt ignorierte Keypoints auf (0,0) und ihre Scores auf 0
+    
+    Args:
+        keypoints: Array (num_persons, 133, 2)
+        scores: Array (num_persons, 133)
+        ignore_indices: Liste der zu ignorierenden Keypoint-Indizes
+        
+    Returns:
+        keypoints_filtered, scores_filtered
+    """
+    if ignore_indices is None:
+        return keypoints.copy(), scores.copy()
+    
+    keypoints_filtered = keypoints.copy()
+    scores_filtered = scores.copy()
+    
+    for idx in ignore_indices:
+        if idx < keypoints_filtered.shape[1]:
+            keypoints_filtered[:, idx, :] = 0
+            scores_filtered[:, idx] = 0
+    
+    return keypoints_filtered, scores_filtered
+
+
+def draw_skeleton_filtered(image, keypoints, scores, ignore_indices=None, kpt_thr=0.3):
+    """
+    Zeichnet Skeleton ohne die ignorierten Verbindungen
+    
+    Args:
+        image: Input image
+        keypoints: Array (num_persons, 133, 2)
+        scores: Array (num_persons, 133)
+        ignore_indices: Liste der zu ignorierenden Keypoint-Indizes
+        kpt_thr: Confidence threshold
+        
+    Returns:
+        Annotated image
+    """
+    if ignore_indices is None:
+        # Fallback auf rtmlib standard
+        from rtmlib import draw_skeleton
+        return draw_skeleton(image, keypoints, scores, kpt_thr=kpt_thr)
+    
+    # Definiere Body-Verbindungen (ohne Beine/Füße)
+    BODY_CONNECTIONS = [
+        (53, 1), (53, 2), (1, 3), (2, 4),  # Kopf (0 ersetzt durch 53)
+        (3, 5), (4, 6), (5, 6),  # Schultern
+        (5, 7), (7, 91),  # Linker Arm (verbinde Ellbogen mit Handgelenk 91 statt 9)
+        (6, 8), (8, 112),  # Rechter Arm (verbinde Ellbogen mit Handgelenk 112 statt 10)
+        (5, 11), (6, 12), (11, 12),  # Torso
+    ]
+    
+    annotated = image.copy()
+    ignore_set = set(ignore_indices)
+    
+    for person_idx in range(len(keypoints)):
+        kpts = keypoints[person_idx]
+        conf = scores[person_idx]
+        
+        # Zeichne Verbindungen
+        for start_idx, end_idx in BODY_CONNECTIONS:
+            if start_idx not in ignore_set and end_idx not in ignore_set:
+                if conf[start_idx] > kpt_thr and conf[end_idx] > kpt_thr:
+                    pt1 = tuple(kpts[start_idx].astype(int))
+                    pt2 = tuple(kpts[end_idx].astype(int))
+                    cv2.line(annotated, pt1, pt2, (0, 255, 0), 2)
+        
+        # Zeichne Keypoints
+        for idx in range(len(kpts)):
+            if idx not in ignore_set and conf[idx] > kpt_thr:
+                pt = tuple(kpts[idx].astype(int))
+                cv2.circle(annotated, pt, 3, (0, 0, 255), -1)
+    
+    return annotated
 
 @dataclass
 class PoseResult:
@@ -108,14 +186,14 @@ class PoseEstimator2D:
             # Save annotated first frame if requested
             if show_first_annotated and not first_annotated_shown:
                 try:
-                    from rtmlib import draw_skeleton
-                    left_annot = draw_skeleton(
+                    # Verwende unsere gefilterte draw_skeleton Funktion
+                    left_annot = draw_skeleton_filtered(
                         left_img.copy(),
                         left_result.keypoints,
                         left_result.scores,
                         kpt_thr=self.kpt_threshold
                     )
-                    right_annot = draw_skeleton(
+                    right_annot = draw_skeleton_filtered(
                         right_img.copy(),
                         right_result.keypoints,
                         right_result.scores,
@@ -155,6 +233,7 @@ class PoseEstimator2D:
 
         print(f"Processing completed. Total frames: {len(results)}")
         return results
+    
     """
     A wrapper class for RTMLib pose estimation.
     
@@ -198,6 +277,55 @@ class PoseEstimator2D:
         except Exception as e:
             raise RuntimeError(f"Failed to initialize RTMLib: {e}")
     
+    def _replace_keypoints(self, keypoints: np.ndarray, scores: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Ersetze bestimmte Körperpunkte durch Gesichts- bzw. Handpunkte.
+        
+        Ersetzungen:
+        - Punkt 0 (Körper-Nase) wird durch Punkt 53 (Gesichts-Nase) ersetzt
+        - Punkt 9 (linkes Körper-Handgelenk) wird durch Punkt 91 (linkes Hand-Handgelenk) ersetzt
+        - Punkt 10 (rechtes Körper-Handgelenk) wird durch Punkt 112 (rechtes Hand-Handgelenk) ersetzt
+        
+        Args:
+            keypoints: Array of shape (num_persons, 133, 2)
+            scores: Array of shape (num_persons, 133)
+            
+        Returns:
+            Tuple of (keypoints, scores) mit ersetzten Werten
+        """
+        keypoints_modified = keypoints.copy()
+        scores_modified = scores.copy()
+        
+        for person_idx in range(len(keypoints)):
+            # Ersetze Körper-Nase (0) durch Gesichts-Nase (53)
+            if scores[person_idx, 53] > 0:  # Nur wenn Gesichts-Nase erkannt wurde
+                keypoints_modified[person_idx, 0] = keypoints[person_idx, 53]  # 0 = 53
+                scores_modified[person_idx, 0] = scores[person_idx, 53]
+            else:
+                # Wenn Gesichts-Nase nicht erkannt, setze Körper-Nase auf 0
+                keypoints_modified[person_idx, 0] = 0
+                scores_modified[person_idx, 0] = 0
+            
+            # Ersetze linkes Handgelenk (9) durch Hand-Handgelenk (91)
+            if scores[person_idx, 91] > 0:  # Nur wenn Hand-Handgelenk erkannt wurde
+                keypoints_modified[person_idx, 9] = keypoints[person_idx, 91]  # 9 = 91
+                scores_modified[person_idx, 9] = scores[person_idx, 91]
+            else:
+                # Wenn Hand-Handgelenk nicht erkannt, setze Körper-Handgelenk auf 0
+                keypoints_modified[person_idx, 9] = 0
+                scores_modified[person_idx, 9] = 0
+            
+            # Ersetze rechtes Handgelenk (10) durch Hand-Handgelenk (112)
+            if scores[person_idx, 112] > 0:  # Nur wenn Hand-Handgelenk erkannt wurde
+                keypoints_modified[person_idx, 10] = keypoints[person_idx, 112]  # 10 = 112
+                scores_modified[person_idx, 10] = scores[person_idx, 112]
+            else:
+                # Wenn Hand-Handgelenk nicht erkannt, setze Körper-Handgelenk auf 0
+                keypoints_modified[person_idx, 10] = 0
+                scores_modified[person_idx, 10] = 0
+        
+        return keypoints_modified, scores_modified
+    
     def _process_frame(self, frame: np.ndarray, frame_idx: int = 0) -> PoseResult:
         """
         Process a single frame and extract pose keypoints.
@@ -235,6 +363,9 @@ class PoseEstimator2D:
                 confidence_scores=confidence_scores[np.newaxis, ...]
 
             num_persons=keypoints.shape[0]
+
+            # ERWEITERT: Ersetze Keypoints (0=53, 9=91, 10=112)
+            keypoints, confidence_scores = self._replace_keypoints(keypoints, confidence_scores)
 
             # Calculate bounding boxes from keypoints
             bboxes=[]
@@ -281,20 +412,24 @@ class PoseEstimator2D:
 
             bboxes_array=np.array(bboxes)
 
-            for j in range(keypoints.shape[1]):
-                if (keypoints[0][j] == [0, 0]).all():
-                    print(f"Keypoint {j}: (0, 0) - Score: {confidence_scores[0][j]:.3f}")
+            # Debugging-Ausgabe
+            print(f"Frame {frame_idx}: Keypoint 0 = {keypoints[0, 0]}, Score 0 = {confidence_scores[0, 0]:.3f}")
+            print(f"Frame {frame_idx}: Keypoint 53 = {keypoints[0, 53]}, Score 53 = {confidence_scores[0, 53]:.3f}")
+            print(f"Frame {frame_idx}: Keypoint 9 = {keypoints[0, 9]}, Score 9 = {confidence_scores[0, 9]:.3f}")
+            print(f"Frame {frame_idx}: Keypoint 91 = {keypoints[0, 91]}, Score 91 = {confidence_scores[0, 91]:.3f}")
+            print(f"Frame {frame_idx}: Keypoint 10 = {keypoints[0, 10]}, Score 10 = {confidence_scores[0, 10]:.3f}")
+            print(f"Frame {frame_idx}: Keypoint 112 = {keypoints[0, 112]}, Score 112 = {confidence_scores[0, 112]:.3f}")
 
             return PoseResult(
                 frame_idx=frame_idx,
-                keypoints=keypoints,  # Jetzt mit den modifizierten Keypoints
+                keypoints=keypoints,  # Jetzt mit den modifizierten Keypoints (0=53, 9=91, 10=112)
                 scores=confidence_scores,
                 bboxes=bboxes_array,
                 num_persons=num_persons
             )
             
         except Exception as e:
-            print(f"Error processing frame {frame_idx}: {e.with_traceback()}")
+            print(f"Error processing frame {frame_idx}: {e}")
             # Return empty result on error
             return PoseResult(
                 frame_idx=frame_idx,
@@ -345,7 +480,8 @@ class PoseEstimator2D:
         output_path: Optional[Union[str, Path]] = None,
         draw_bbox: bool = True,
         draw_keypoints: bool = True,
-        keypoint_threshold: float = 0.3
+        keypoint_threshold: float = 0.3,
+        ignore_keypoints: Optional[List[int]] = None
     ) -> PoseResult:
         """
         Process a single image and optionally save the annotated result.
@@ -356,47 +492,51 @@ class PoseEstimator2D:
             draw_bbox: Whether to draw bounding boxes
             draw_keypoints: Whether to draw keypoints and skeleton
             keypoint_threshold: Minimum confidence threshold for drawing keypoints
+            ignore_keypoints: List of keypoint indices to ignore (e.g., [14,15,16,...,23] for feet)
             
         Returns:
             PoseResult object containing pose estimation results
         """
         image_path = Path(image_path)
         
-        # Only create output directory if output_path is provided
         if output_path is not None:
             output_path = Path(output_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Load image
         frame = cv2.imread(str(image_path))
         if frame is None:
             raise ValueError(f"Cannot load image file: {image_path}")
         
         print(f"Processing image: {image_path}")
         
-        # Process the image
         result = self._process_frame(frame, frame_idx=0)
         
-        # Create annotated image
+        # NEU: Filtere Keypoints wenn gewünscht
+        if ignore_keypoints is not None:
+            result.keypoints, result.scores = filter_keypoints(
+                result.keypoints, 
+                result.scores, 
+                ignore_keypoints
+            )
+        
         annotated_frame = frame.copy()
         
         if result.num_persons > 0:
-            # Draw bounding boxes
             if draw_bbox and len(result.bboxes) > 0:
                 for bbox in result.bboxes:
                     x1, y1, x2, y2 = bbox[:4].astype(int)
                     cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
             
-            # Draw keypoints and skeleton
             if draw_keypoints:
-                annotated_frame = draw_skeleton(
+                # NEU: Verwende gefilterte draw_skeleton Funktion
+                annotated_frame = draw_skeleton_filtered(
                     annotated_frame,
                     result.keypoints,
                     result.scores,
+                    ignore_keypoints,
                     kpt_thr=keypoint_threshold
                 )
         
-        # Save annotated image only if output_path is provided
         if output_path is not None:
             cv2.imwrite(str(output_path), annotated_frame)
             print(f"Saved annotated image to: {output_path}")
@@ -465,7 +605,8 @@ class PoseEstimator2D:
             
             # Save annotated frame if requested
             if save_frames and output_dir and result.num_persons > 0:
-                annotated_frame = draw_skeleton(
+                # Verwende unsere gefilterte draw_skeleton Funktion
+                annotated_frame = draw_skeleton_filtered(
                     frame.copy(),
                     result.keypoints,
                     result.scores,

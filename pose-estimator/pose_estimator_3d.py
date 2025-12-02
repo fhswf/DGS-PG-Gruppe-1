@@ -13,7 +13,6 @@ import json
 import torch
 import torch.nn as nn
 
-
 class PoseLiftingModel(nn.Module):
     """
     Neural Network for lifting 2D poses to 3D.
@@ -231,13 +230,13 @@ class Pose3DConverter:
         # KI-basierte Heuristik: "Errate" die Tiefe basierend auf Anatomie
         for i in range(133):
             if scores[i] > 0.3:  # Nur für confident points
-                # Körper-Punkte (0-16)
-                if i < 17:
+                # Körper-Punkte (0-22)
+                if i < 23:
                     keypoints_3d[i, 2] = self._estimate_body_point_depth(i, keypoints_2d, body_size)
-                # Gesichts-Punkte (17-116) 
-                elif i < 117:
+                # Gesichts-Punkte (23-91) 
+                elif i < 92:
                     keypoints_3d[i, 2] = self._estimate_face_point_depth(i, keypoints_2d, body_size)
-                # Hände-Punkte (117-132)
+                # Hände-Punkte (92-133)
                 else:
                     keypoints_3d[i, 2] = self._estimate_hand_point_depth(i, keypoints_2d, body_size)
         
@@ -275,9 +274,9 @@ class Pose3DConverter:
             # Hips - medium depth
             11: 0.0, 12: 0.0,
             # Knees - backward
-            13: -0.1, 14: -0.1,
+            #13: -0.1, 14: -0.1,
             # Ankles - more backward
-            15: -0.2, 16: -0.2,
+            #15: -0.2, 16: -0.2,
         }
         
         default_depth = 0.0
@@ -308,8 +307,8 @@ class Pose3DConverter:
         connections = [
             [5, 7, 9],    # Linker Arm
             [6, 8, 10],   # Rechter Arm
-            [11, 13, 15], # Linkes Bein
-            [12, 14, 16]  # Rechtes Bein
+            #[11, 13, 15], # Linkes Bein
+            #[12, 14, 16]  # Rechtes Bein
         ]
         
         for connection in connections:
