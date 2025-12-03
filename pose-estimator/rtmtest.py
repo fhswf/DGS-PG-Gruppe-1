@@ -16,7 +16,7 @@ So wie ein Küchenrezept: Zutaten → Schritte → fertiges Gericht!
 # ===============================================
 # Hier laden wir unsere selbstgeschriebenen "Werkzeugkästen"
 from pose_estimator_2d import PoseEstimator2D, DEFAULT_IGNORE_KEYPOINTS, filter_keypoints
-from pose_estimator_3d_mmpose import convert_2d_poses_to_3d  # 🔄 Neues 3D-Modul
+from pose_estimator_3d import convert_2d_poses_to_3d  # 🔄 Neues 3D-Modul
 from pose_3d_visualizer_updated import plot_3d_pose_from_json, plot_multiple_views  # 🎨 Verbesserter Visualizer
 import json  # 📄 Zum Lesen/Schreiben von Daten-Dateien
 import numpy as np  # 🔢 Für Mathe-Berechnungen
@@ -156,7 +156,7 @@ print("   Alternative: 'mmpose' (fortgeschrittene KI, wenn installiert)")
 results_3d = convert_2d_poses_to_3d(
     "poses_2d_filtered.json",        # 📁 Eingabe: Unsere 2D-Daten
     "poses_3d_filtered.json",        # 📁 Ausgabe: Werden 3D-Daten
-    lifting_method='geometric'       # 🔧 Methode: geometric (Mathe) oder mmpose (KI)
+    lifting_method='ai'       # 🔧 Methode: geometric (Mathe) oder ai (KI)
 )
 print("✅ 3D-Modelle erfolgreich erstellt!")
 
