@@ -40,7 +40,7 @@ except ImportError:
 # ===============================================
 # Standardmäßig ignorierte Körperpunkte: Beine, Füße, Zehen (Punkte 13-22)
 # Warum? Manchmal wollen wir uns nur auf Oberkörper konzentrieren!
-DEFAULT_IGNORE_KEYPOINTS = list(range(13, 23))  # 🔢 Von Punkt 13 bis 22
+DEFAULT_IGNORE_KEYPOINTS = [0, 9, 10] + list(range(13, 23))  # 🔢 Von Punkt 13 bis 22
 
 # ===============================================
 # 🔧 HILFSFUNKTION 1: BESTIMMTE KÖRPERPUNKTE AUSSCHALTEN
