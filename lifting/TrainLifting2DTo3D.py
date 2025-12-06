@@ -242,7 +242,7 @@ if __name__ == "__main__":
     print(f"Testdaten: {len(test_data)} Einträge")
 
     # Trainingsparameter
-    EPOCHS=75
+    EPOCHS=175
     BATCH_SIZE=256
     LEARNING_RATE=0.002
 
