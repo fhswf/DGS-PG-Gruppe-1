@@ -6,9 +6,10 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from tqdm import tqdm
+from sklearn.model_selection import train_test_split
 
 
-# Modelldefinition (wie vorgegeben)
+# Modelldefinition
 class model_A_simple_yet_effective_baseline_for_3d_human_pose_estimation(nn.Module):
     def __init__(self):
         super(model_A_simple_yet_effective_baseline_for_3d_human_pose_estimation, self).__init__()
@@ -35,35 +36,33 @@ class model_A_simple_yet_effective_baseline_for_3d_human_pose_estimation(nn.Modu
         return x
 
 
-# Dataset Klasse für Ihre Daten
+# Dataset Klasse für Ihre Daten - jetzt für Listen optimiert
 class KeypointsDataset(Dataset):
-    def __init__(self, data_dict):
+    def __init__(self, data_list):
         self.data=[]
 
-        # Daten aus dem JSON-Format extrahieren
-        for frame_id, frame_data in data_dict.items():
-            keypoints_2d=frame_data['keypoints_2d']
-            keypoints_3d=frame_data['keypoints_3d']
+        # Daten aus der Liste extrahieren
+        for frame_data in data_list:
+            keypoints_2d=frame_data.get('keypoints_2d', {})
+            keypoints_3d=frame_data.get('keypoints_3d', {})
 
             # 2D Keypoints extrahieren und in einen Vektor umwandeln
             kp2d_list=[]
             for i in range(133):  # 133 Keypoints
                 if str(i) in keypoints_2d:
-                    kp2d_list.append(keypoints_2d[str(i)]['x'])
-                    kp2d_list.append(keypoints_2d[str(i)]['y'])
+                    kp2d_list.append(keypoints_2d[str(i)].get('x', 0.0))
+                    kp2d_list.append(keypoints_2d[str(i)].get('y', 0.0))
                 else:
-                    # Falls Keypoints fehlen, mit 0 füllen
                     kp2d_list.extend([0.0, 0.0])
 
             # 3D Keypoints extrahieren und in einen Vektor umwandeln
             kp3d_list=[]
             for i in range(133):  # 133 Keypoints
                 if str(i) in keypoints_3d:
-                    kp3d_list.append(keypoints_3d[str(i)]['x'])
-                    kp3d_list.append(keypoints_3d[str(i)]['y'])
-                    kp3d_list.append(keypoints_3d[str(i)]['z'])
+                    kp3d_list.append(keypoints_3d[str(i)].get('x', 0.0))
+                    kp3d_list.append(keypoints_3d[str(i)].get('y', 0.0))
+                    kp3d_list.append(keypoints_3d[str(i)].get('z', 0.0))
                 else:
-                    # Falls Keypoints fehlen, mit 0 füllen
                     kp3d_list.extend([0.0, 0.0, 0.0])
 
             self.data.append({
@@ -79,9 +78,9 @@ class KeypointsDataset(Dataset):
 
 
 # Evaluierungsfunktion
-def evaluate_model(model, data_dict, device):
+def evaluate_model(model, data_list, device):
     model.eval()
-    dataset=KeypointsDataset(data_dict)
+    dataset=KeypointsDataset(data_list)
     dataloader=DataLoader(dataset, batch_size=32, shuffle=False)
 
     criterion=nn.MSELoss()
@@ -103,15 +102,18 @@ def evaluate_model(model, data_dict, device):
     return avg_loss
 
 
-# Haupttrainingsfunktion
-def train_model(data_dict, epochs=100, batch_size=256, learning_rate=0.002):
+# Haupttrainingsfunktion mit Train/Test-Split
+def train_model(train_data, test_data, epochs=100, batch_size=256, learning_rate=0.002):
     # Device setup
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Dataset und DataLoader erstellen
-    dataset=KeypointsDataset(data_dict)
-    dataloader=DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    # Datasets und DataLoaders erstellen
+    train_dataset=KeypointsDataset(train_data)
+    test_dataset=KeypointsDataset(test_data)
+
+    train_dataloader=DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_dataloader=DataLoader(test_dataset, batch_size=32, shuffle=False)
 
     # Modell initialisieren
     model=model_A_simple_yet_effective_baseline_for_3d_human_pose_estimation().to(device)
@@ -142,7 +144,7 @@ def train_model(data_dict, epochs=100, batch_size=256, learning_rate=0.002):
         num_batches=0
 
         # Fortschrittsbalken für Batches
-        batch_progress=tqdm(dataloader, desc=f'Epoch [{epoch + 1}/{epochs}]', leave=False)
+        batch_progress=tqdm(train_dataloader, desc=f'Epoch [{epoch + 1}/{epochs}]', leave=False)
 
         for batch_idx, (inputs_2d, targets_3d) in enumerate(batch_progress):
             inputs_2d=inputs_2d.to(device)
@@ -166,19 +168,29 @@ def train_model(data_dict, epochs=100, batch_size=256, learning_rate=0.002):
             batch_progress.set_postfix({'Batch Loss': f'{loss.item():.6f}'})
 
         # Durchschnittlicher Loss für die Epoche
-        avg_loss=total_loss / num_batches
+        avg_train_loss=total_loss / num_batches
 
-        # Evaluation nach jeder Epoche
-        eval_loss=evaluate_model(model, data_dict, device)
+        # Evaluation auf Testdaten
+        model.eval()
+        test_loss=0
+        with torch.no_grad():
+            for inputs_2d, targets_3d in test_dataloader:
+                inputs_2d=inputs_2d.to(device)
+                targets_3d=targets_3d.to(device)
+                outputs_3d=model(inputs_2d)
+                loss=criterion(outputs_3d, targets_3d)
+                test_loss+=loss.item() * inputs_2d.size(0)
 
-        print(f'Epoch [{epoch + 1}/{epochs}], Train Loss: {avg_loss:.6f}, Eval Loss: {eval_loss:.6f}')
+        avg_test_loss=test_loss / len(test_dataset)
 
-        # Learning Rate anpassen basierend auf Evaluierungs-Loss
-        scheduler.step(eval_loss)
+        print(f'Epoch [{epoch + 1}/{epochs}], Train Loss: {avg_train_loss:.6f}, Test Loss: {avg_test_loss:.6f}')
+
+        # Learning Rate anpassen basierend auf Test-Loss
+        scheduler.step(avg_test_loss)
 
         # Prüfe ob dies die beste Epoche ist
-        if eval_loss < best_loss:
-            best_loss=eval_loss
+        if avg_test_loss < best_loss:
+            best_loss=avg_test_loss
             best_epoch=epoch + 1
             torch.save(model.state_dict(), 'net_best.pth')
             print(f'New best model saved (Epoch {best_epoch}, Loss: {best_loss:.6f})')
@@ -200,18 +212,55 @@ def train_model(data_dict, epochs=100, batch_size=256, learning_rate=0.002):
 if __name__ == "__main__":
     # Daten laden
     with open('2Dto3D_train.json', 'r') as f:
-        train_data=json.load(f)
+        data1=json.load(f)
+
+    with open('T3WB_v1.json', 'r') as f:
+        data2=json.load(f)
+
+    # Beide zu Listen konvertieren, falls nötig
+    if isinstance(data1, dict):
+        train_data=list(data1.values())
+    else:
+        train_data=data1.copy()
+
+    if isinstance(data2, dict):
+        train_data.extend(list(data2.values()))
+    else:
+        train_data.extend(data2)
+
+    print(f"Insgesamt {len(train_data)} Einträge geladen")
+
+    # Train/Test Split (80/20)
+    train_data, test_data=train_test_split(
+        train_data,
+        test_size=0.2,
+        random_state=42,
+        shuffle=True
+    )
+
+    print(f"Trainingsdaten: {len(train_data)} Einträge")
+    print(f"Testdaten: {len(test_data)} Einträge")
 
     # Trainingsparameter
     EPOCHS=75
-    BATCH_SIZE=256  # Erhöht
-    LEARNING_RATE=0.002  # Erhöht
+    BATCH_SIZE=256
+    LEARNING_RATE=0.002
 
     # Training starten
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model=train_model(train_data, epochs=EPOCHS, batch_size=BATCH_SIZE, learning_rate=LEARNING_RATE)
+    model=train_model(
+        train_data,
+        test_data,
+        epochs=EPOCHS,
+        batch_size=BATCH_SIZE,
+        learning_rate=LEARNING_RATE
+    )
 
-    # Modell auf Trainingsdaten evaluieren
-    print("\nEvaluating model on training data...")
-    eval_loss=evaluate_model(model, train_data, device)
-    print(f'Final Evaluation Loss: {eval_loss:.6f}')
+    # Finale Evaluation auf Testdaten
+    print("\nEvaluating model on test data...")
+    test_loss=evaluate_model(model, test_data, device)
+    print(f'Final Test Loss: {test_loss:.6f}')
+
+    # Optional: Auch auf Trainingsdaten evaluieren
+    train_loss=evaluate_model(model, train_data, device)
+    print(f'Final Train Loss: {train_loss:.6f}')
