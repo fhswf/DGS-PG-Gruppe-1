@@ -4,3 +4,4 @@ pose-estimator/poses_3d.json
 pose-estimator/*.png
 pose-estimator/*.jpg
 lifting/*.json
+*.pyc
