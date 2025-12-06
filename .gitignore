@@ -5,3 +5,4 @@ pose-estimator/*.png
 pose-estimator/*.jpg
 lifting/*.json
 *.pyc
+*.pth
