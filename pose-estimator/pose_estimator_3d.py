@@ -24,7 +24,7 @@ import torch.nn as nn
 # 🤖 EIGENES TRAINIERTES MODELL (gleiche Struktur wie im Training)
 # ===============================================
 class Simple3DPoseEstimator(nn.Module):
-    """Einfaches MLP-Modell für 2D→3D Pose Estimation"""
+    """Einfaches AI-Modell für 2D→3D Pose Estimation"""
     def __init__(self):
         super(Simple3DPoseEstimator, self).__init__()
         self.upscale = nn.Linear(133*2, 1024)
@@ -178,9 +178,9 @@ class Pose3DConverter:
             kpts = kpts_2d[person_idx]
             scr = scores[person_idx]
             
-            if self.lifting_method == 'mlp' and self.model is not None:
+            if self.lifting_method == 'ai' and self.model is not None:
                 # 🤖 MIT EIGENEM MODELL
-                kpts_3d = self._mlp_lift_2d_to_3d(kpts, scr, (h, w))
+                kpts_3d = self._ai_lift_2d_to_3d(kpts, scr, (h, w))
             else:
                 # 🪄 MIT GEOMETRISCHER METHODE (FALLBACK)
                 kpts_3d = self._geometric_lift_2d_to_3d(kpts, scr, (h, w))
@@ -214,7 +214,7 @@ class Pose3DConverter:
             confidence=confidence
         )
     
-    def _mlp_lift_2d_to_3d(
+    def _ai_lift_2d_to_3d(
         self, 
         keypoints_2d: np.ndarray, 
         scores: np.ndarray, 
@@ -223,7 +223,7 @@ class Pose3DConverter:
         """
         🤖 EIGENES MODELL: WANDELT 2D IN 3D UM
         
-        Verwendet das trainierte MLP-Modell für präzisere 3D-Schätzungen.
+        Verwendet das trainierte AI-Modell für präzisere 3D-Schätzungen.
         """
         h, w = image_shape
         keypoints_3d = np.zeros((133, 3))
