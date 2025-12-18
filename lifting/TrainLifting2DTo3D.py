@@ -11,9 +11,9 @@ from sklearn.model_selection import train_test_split
 
 # Modelldefinition
 class model_A_simple_yet_effective_baseline_for_3d_human_pose_estimation(nn.Module):
-    def __init__(self):
+    def __init__(self, num_keypoints=133):
         super(model_A_simple_yet_effective_baseline_for_3d_human_pose_estimation, self).__init__()
-        self.upscale=nn.Linear(133 * 2, 1024)
+        self.upscale=nn.Linear(num_keypoints * 2, 1024)
         self.fc1=nn.Linear(1024, 1024)
         self.bn1=nn.BatchNorm1d(1024)
         self.fc2=nn.Linear(1024, 1024)
@@ -22,7 +22,7 @@ class model_A_simple_yet_effective_baseline_for_3d_human_pose_estimation(nn.Modu
         self.bn3=nn.BatchNorm1d(1024)
         self.fc4=nn.Linear(1024, 1024)
         self.bn4=nn.BatchNorm1d(1024)
-        self.outputlayer=nn.Linear(1024, 133 * 3)
+        self.outputlayer=nn.Linear(1024, num_keypoints * 3)
 
     def forward(self, x):
         x=self.upscale(x)
@@ -38,26 +38,28 @@ class model_A_simple_yet_effective_baseline_for_3d_human_pose_estimation(nn.Modu
 
 # Dataset Klasse für Ihre Daten - jetzt für Listen optimiert
 class KeypointsDataset(Dataset):
-    def __init__(self, data_list):
+    def __init__(self, data_list, num_keypoints=133):
+        if num_keypoints not in [133, 17]:
+            raise ValueError(f"numkeypoints muss 133 oder 17 sein, nicht {num_keypoints}")
+
         self.data=[]
 
-        # Daten aus der Liste extrahieren
         for frame_data in data_list:
             keypoints_2d=frame_data.get('keypoints_2d', {})
             keypoints_3d=frame_data.get('keypoints_3d', {})
 
-            # 2D Keypoints extrahieren und in einen Vektor umwandeln
+            # 2D Keypoints extrahieren
             kp2d_list=[]
-            for i in range(133):  # 133 Keypoints
+            for i in range(num_keypoints):  # Nur die ersten extract_points Punkte
                 if str(i) in keypoints_2d:
                     kp2d_list.append(keypoints_2d[str(i)].get('x', 0.0))
                     kp2d_list.append(keypoints_2d[str(i)].get('y', 0.0))
                 else:
                     kp2d_list.extend([0.0, 0.0])
 
-            # 3D Keypoints extrahieren und in einen Vektor umwandeln
+            # 3D Keypoints extrahieren
             kp3d_list=[]
-            for i in range(133):  # 133 Keypoints
+            for i in range(num_keypoints):  # Nur die ersten extract_points Punkte
                 if str(i) in keypoints_3d:
                     kp3d_list.append(keypoints_3d[str(i)].get('x', 0.0))
                     kp3d_list.append(keypoints_3d[str(i)].get('y', 0.0))
@@ -78,9 +80,9 @@ class KeypointsDataset(Dataset):
 
 
 # Evaluierungsfunktion
-def evaluate_model(model, data_list, device):
+def evaluate_model(model, data_list, device, num_keypoints=133):
     model.eval()
-    dataset=KeypointsDataset(data_list)
+    dataset=KeypointsDataset(data_list, num_keypoints=num_keypoints)
     dataloader=DataLoader(dataset, batch_size=32, shuffle=False)
 
     criterion=nn.MSELoss()
@@ -103,24 +105,24 @@ def evaluate_model(model, data_list, device):
 
 
 # Haupttrainingsfunktion mit Train/Test-Split
-def train_model(train_data, test_data, epochs=100, batch_size=256, learning_rate=0.002):
+def train_model(train_data, test_data, epochs=100, batch_size=256, learning_rate=0.002, num_keypoints=133):
     # Device setup
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
     # Datasets und DataLoaders erstellen
-    train_dataset=KeypointsDataset(train_data)
-    test_dataset=KeypointsDataset(test_data)
+    train_dataset=KeypointsDataset(train_data, num_keypoints=num_keypoints)
+    test_dataset=KeypointsDataset(test_data, num_keypoints=num_keypoints)
 
     train_dataloader=DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_dataloader=DataLoader(test_dataset, batch_size=32, shuffle=False)
 
     # Modell initialisieren
-    model=model_A_simple_yet_effective_baseline_for_3d_human_pose_estimation().to(device)
+    model=model_A_simple_yet_effective_baseline_for_3d_human_pose_estimation(num_keypoints=num_keypoints).to(device)
 
     # Falls vortrainiertes Modell existiert, laden
-    if os.path.exists('net.pth'):
-        model.load_state_dict(torch.load('net.pth', map_location=device))
+    if os.path.exists(f'net_{num_keypoints}.pth'):
+        model.load_state_dict(torch.load(f'net_{num_keypoints}.pth', map_location=device))
         print('Pretrained weights loaded successfully')
 
     # Loss-Funktion und Optimizer
@@ -192,19 +194,19 @@ def train_model(train_data, test_data, epochs=100, batch_size=256, learning_rate
         if avg_test_loss < best_loss:
             best_loss=avg_test_loss
             best_epoch=epoch + 1
-            torch.save(model.state_dict(), 'net_best.pth')
+            torch.save(model.state_dict(), f'net_{num_keypoints}_best.pth')
             print(f'New best model saved (Epoch {best_epoch}, Loss: {best_loss:.6f})')
 
         # Modell speichern (jede 10. Epoche)
         if (epoch + 1) % 10 == 0:
-            torch.save(model.state_dict(), f'net_epoch_{epoch + 1}.pth')
+            torch.save(model.state_dict(), f'net_{num_keypoints}_epoch_{epoch + 1}.pth')
 
     # Finales Modell speichern
-    torch.save(model.state_dict(), 'net_final.pth')
+    torch.save(model.state_dict(), f'net_{num_keypoints}_final.pth')
     print(f'\nTraining completed!')
     print(f'Best epoch: {best_epoch} with loss: {best_loss:.6f}')
-    print(f'Final model saved as net_final.pth')
-    print(f'Best model saved as net_best.pth')
+    print(f'Final model saved as net_{num_keypoints}_final.pth')
+    print(f'Best model saved as net_{num_keypoints}_best.pth')
 
     return model
 
@@ -245,6 +247,7 @@ if __name__ == "__main__":
     EPOCHS=175
     BATCH_SIZE=256
     LEARNING_RATE=0.002
+    num_keypoints=17
 
     # Training starten
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -253,14 +256,15 @@ if __name__ == "__main__":
         test_data,
         epochs=EPOCHS,
         batch_size=BATCH_SIZE,
-        learning_rate=LEARNING_RATE
+        learning_rate=LEARNING_RATE,
+        num_keypoints=num_keypoints
     )
 
     # Finale Evaluation auf Testdaten
     print("\nEvaluating model on test data...")
-    test_loss=evaluate_model(model, test_data, device)
+    test_loss=evaluate_model(model, test_data, device, num_keypoints=num_keypoints)
     print(f'Final Test Loss: {test_loss:.6f}')
 
     # Optional: Auch auf Trainingsdaten evaluieren
-    train_loss=evaluate_model(model, train_data, device)
+    train_loss=evaluate_model(model, train_data, device, num_keypoints=num_keypoints)
     print(f'Final Train Loss: {train_loss:.6f}')
