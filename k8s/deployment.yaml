@@ -6,7 +6,7 @@ metadata:
     app: rtmlib-ml-backend
     version: v1
 spec:
-  replicas: 5
+  replicas: 2
   strategy:
     type: RollingUpdate
     rollingUpdate:
