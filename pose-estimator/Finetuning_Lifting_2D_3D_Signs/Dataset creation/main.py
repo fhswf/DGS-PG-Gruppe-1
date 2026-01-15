@@ -103,8 +103,8 @@ class DatasetGenerator:
         frame_right = frame[:, w_half:]
         
         # Run Estimator on both sides
-        res_left = self.pose_estimator(frame_left)
-        res_right = self.pose_estimator(frame_right)
+        res_left = self.pose_estimator.process_frame(frame_left)
+        res_right = self.pose_estimator.process_frame(frame_right)
         
         # Helper to extract raw keypoints from result list
         def get_kps(res):
