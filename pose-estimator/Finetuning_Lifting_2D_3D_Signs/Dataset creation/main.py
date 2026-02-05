@@ -39,7 +39,13 @@ class DatasetGenerator:
         print("Initialisiere Pose Estimators...")
         try:
             # 1. Standard 2D Estimator (Explicitly requested by user)
-            self.pose_estimator = RTMPoseEstimator2D(device="cuda")
+            self.pose_estimator = RTMPoseEstimator2D(
+                mode='individual', 
+                det_model_path='https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/yolox_m_8xb8-300e_humanart-c2c7a14a.zip', 
+                det_input_size=(640, 640),
+                pose_model_path='https://cobtras.com/data/model.onnx',
+                pose_input_size=(288, 384),
+                device="cuda")
             
             # 2. 3D Lifter (Replacement for SAD)
             self.lifter = RTMPoseEstimationFrom3DFrame(
@@ -48,7 +54,12 @@ class DatasetGenerator:
                 cx_left=self.CX_LEFT,
                 cy_left=self.CY_LEFT,
                 with_confidence=True,
-                device="cuda"
+                device="cuda",
+                mode = 'individual',
+                det_model_path='https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/yolox_m_8xb8-300e_humanart-c2c7a14a.zip', 
+                det_input_size=(640, 640),
+                pose_model_path='https://cobtras.com/data/model.onnx',
+                pose_input_size=(288, 384)
             )
         except NameError:
              print("Fehler: Klassen nicht definiert. Import fehlgeschlagen?")
