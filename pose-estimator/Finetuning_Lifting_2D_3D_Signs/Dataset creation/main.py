@@ -19,15 +19,13 @@ except ImportError as e:
     pass
 
 class DatasetGenerator:
-    def __init__(self, source_dir, output_file_small, output_file_medium, baseline_m=0.06):
+    def __init__(self, source_dir, output_dir_small, output_dir_medium, baseline_m=0.06):
         self.source_dir = Path(source_dir)
-        self.output_file_small = Path(output_file_small)
-        self.output_file_medium = Path(output_file_medium)
+        self.output_dir_small = Path(output_dir_small)
+        self.output_dir_medium = Path(output_dir_medium)
         self.baseline = baseline_m
         
-        # Data storage for the final JSON output
-        self.data_small = {}
-        self.data_medium = {}
+        # Internal counters for naming files
         self.cnt_small = 0
         self.cnt_medium = 0
         
@@ -103,17 +101,16 @@ class DatasetGenerator:
         frame_right = frame[:, w_half:]
         
         # Run Estimator on both sides
-        res_left = self.pose_estimator.process_frame(frame_left)
-        res_right = self.pose_estimator.process_frame(frame_right)
+        res_left = self.pose_estimator.process_image(frame_left)
+        res_right = self.pose_estimator.process_image(frame_right)
         
         # Helper to extract raw keypoints from result list
         def get_kps(res):
-            if res and len(res) > 0:
-                person = res[0]
-                if isinstance(person, dict):
-                    return person.get('keypoints')
-                elif hasattr(person, 'keypoints'):
-                    return person.keypoints
+            if res and res.num_persons > 0:
+                if isinstance(res, dict):
+                    return res.get('keypoints')
+                elif hasattr(res, 'keypoints'):
+                    return res.keypoints
             return None
 
         kps_left = get_kps(res_left)
@@ -125,12 +122,12 @@ class DatasetGenerator:
         
         # 1. Calculate 2D Mean
         if kps_left is not None and kps_right is not None:
-             # Assuming shapes match (usually 133, 2)
+             # Assuming shapes match (usually 1, 133, 2)
              # If lengths differ, take minimum? Usually standard model has fixed size.
              n_points = min(len(kps_left), len(kps_right))
              for i in range(n_points):
-                 x_avg = (kps_left[i][0] + kps_right[i][0]) / 2.0
-                 y_avg = (kps_left[i][1] + kps_right[i][1]) / 2.0
+                 x_avg = (kps_left[0][i][0] + kps_right[0][i][0]) / 2.0
+                 y_avg = (kps_left[0][i][1] + kps_right[0][i][1]) / 2.0
                  kp2d_dict[str(i)] = {"x": float(x_avg), "y": float(y_avg)}
                  
         elif kps_left is not None:
@@ -148,13 +145,13 @@ class DatasetGenerator:
 
         # 2. Process 3D Keypoints
         for p in results_3d:
-            kp3d_dict[str(p.id)] = {"x": float(p.x), "y": float(p.y), "z": float(p.z)}
+            kp3d_dict[str(p.get_data()["id"])] = {"x": float(p.get_data()["x"]), "y": float(p.get_data()["y"]), "z": float(p.get_data()["z"])}
             
         # Confidence
         # Prefer confidence from 3D lifter (which likely merges usage)
         max_id = 0
         if results_3d:
-            max_id = max(max_id, max(p.id for p in results_3d))
+            max_id = max(max_id, max(p.get_data()["id"] for p in results_3d))
             
         if kp2d_dict:
             max_id = max(max_id, max(int(k) for k in kp2d_dict.keys()))
@@ -162,11 +159,13 @@ class DatasetGenerator:
         conf_array = np.zeros(max_id + 1)
         
         # Prefer 3D confidence (merged)
-        for p in results_3d:
-             if hasattr(p, 'confidence'):
-                conf_array[p.id] = float(p.confidence)
-             elif conf_2d_person is not None and len(conf_2d_person) > p.id:
-                conf_array[p.id] = float(conf_2d_person[p.id])
+        #for p in results_3d:
+        #     if hasattr(p, 'confidence'):
+        #        conf_array[p.get_data()["id"]] = float(p.get_data()["confidence"])
+        #     elif conf_2d_person is not None and len(conf_2d_person) > p.get_data()["id"]:
+        #        conf_array[p.get_data()["id"]] = float(conf_2d_person[p.get_data()["id"]])
+
+        # print("1 frame ready") # Spam reduce
                 
         return {
             "keypoints_2d": kp2d_dict,
@@ -176,6 +175,7 @@ class DatasetGenerator:
         }
 
     def run(self, target_small=25000, target_medium=50000):
+        existing_frames = self._check_video_and_frameid()
         video_files = self.scan_videos()
         total_frames_all_videos, video_frames_map = self.count_total_frames(video_files)
         
@@ -192,9 +192,15 @@ class DatasetGenerator:
         processed_count = 0
         
         # Ensure output directories exist
-        self.output_file_small.parent.mkdir(parents=True, exist_ok=True)
-        self.output_file_medium.parent.mkdir(parents=True, exist_ok=True)
+        self.output_dir_small.mkdir(parents=True, exist_ok=True)
+        self.output_dir_medium.mkdir(parents=True, exist_ok=True)
         
+        print(f"Output Directory Small: {self.output_dir_small}")
+        print(f"Output Directory Medium: {self.output_dir_medium}")
+        
+        # Check for existing frames to resume
+        existing_frames = self._check_video_and_frameid()
+
         for video_path in video_files:
             cap = cv2.VideoCapture(str(video_path))
             n_frames = video_frames_map[video_path]
@@ -211,6 +217,12 @@ class DatasetGenerator:
                 need_for_medium = (global_frame_counter % step_medium == 0)
                 
                 if need_for_small or need_for_medium:
+                    # Check if already processed
+                    if (video_path.name, global_frame_counter) in existing_frames:
+                        global_frame_counter += 1
+                        pbar.update(1)
+                        continue
+
                     result = self.process_frame(frame)
                     
                     if result:
@@ -229,16 +241,72 @@ class DatasetGenerator:
             pbar.close()
             cap.release()
             
-        # Write final JSON files
-        print(f"Saving {len(self.data_small)} samples to {self.output_file_small}...")
-        with open(self.output_file_small, 'w') as f:
-            json.dump(self.data_small, f, indent=2)
+        print(f"Fertig! Verarbeitete Samples (gesamt verarbeitet): {processed_count}")
+        print(f"Gespeicherte Samples Small: {self.cnt_small}")
+        print(f"Gespeicherte Samples Medium: {self.cnt_medium}")
+
+    def _check_video_and_frameid(self):
+        """
+        Scannt die Output-Ordner nach existierenden Dateien, um:
+        1. Die Counter (cnt_small, cnt_medium) korrekt zu setzen.
+        2. Eine Menge von bereits verarbeiteten (video_name, frame_id) zu erstellen.
+        """
+        processed_frames = set()
+        
+        def scan_dir(dir_path, is_small):
+            max_cnt = -1
+            if not dir_path.exists():
+                return
             
-        print(f"Saving {len(self.data_medium)} samples to {self.output_file_medium}...")
-        with open(self.output_file_medium, 'w') as f:
-            json.dump(self.data_medium, f, indent=2)
+            # Wir suchen nach pattern *.json
+            # Achtung: Wenn es sehr viele Dateien sind, kann das dauern.
+            json_files = list(dir_path.glob("*.json"))
+            if not json_files:
+                return
+
+            print(f"Scanne {len(json_files)} Dateien in {dir_path}...")
             
-        print(f"Fertig! Verarbeitete Samples: {processed_count}")
+            for fpath in tqdm(json_files, desc=f"Scanning {dir_path.name}"):
+                # 1. Counter update
+                try:
+                    # Dateiname ist z.B. 00000123.json
+                    file_idx = int(fpath.stem)
+                    if file_idx > max_cnt:
+                        max_cnt = file_idx
+                except ValueError:
+                    pass
+                
+                # 2. Content check (optional, aber sicherer für Duplikatsvermeidung)
+                # Wir lesen nur kurz den Header infos, wenn wir wirklich sicher gehen wollen,
+                # dass wir GENAU diesen Frame skippen.
+                # Performance-Optimierung: Ggf. nur Video/Frame Namen aus Cache nutzen? 
+                # Hier: Einmalig einlesen.
+                try:
+                    with open(fpath, 'r') as f:
+                        data = json.load(f)
+                        src_vid = data.get("source_video")
+                        fid = data.get("frame_id")
+                        if src_vid is not None and fid is not None:
+                            processed_frames.add((src_vid, int(fid)))
+                except Exception as e:
+                    print(f"Fehler beim Lesen von {fpath}: {e}")
+
+            # Setze Counter auf max + 1
+            if is_small:
+                self.cnt_small = max_cnt + 1
+            else:
+                self.cnt_medium = max_cnt + 1
+
+        scan_dir(self.output_dir_small, is_small=True)
+        scan_dir(self.output_dir_medium, is_small=False)
+        
+        print(f"Bereits verarbeitet: {len(processed_frames)} eindeutige Frames (aus Small & Medium).")
+        print(f"Fortfahren bei Index Small: {self.cnt_small}")
+        print(f"Fortfahren bei Index Medium: {self.cnt_medium}")
+        
+        return processed_frames
+         
+
 
     def _save_result(self, result, frame_id, save_small, save_medium, source_video):
         # Result is already in dict format from process_frame
@@ -257,19 +325,28 @@ class DatasetGenerator:
             }
         }
 
+        # Dateiname: <index>_<video>_<frame>.json
+        # Wir nutzen den globalen counter als Index
+        
         if save_small:
-            self.data_small[str(self.cnt_small)] = packet
+            file_name = f"{self.cnt_small:08d}.json" 
+            out_path = self.output_dir_small / file_name
+            with open(out_path, 'w') as f:
+                json.dump(packet, f, indent=2)
             self.cnt_small += 1
         
         if save_medium:
-            self.data_medium[str(self.cnt_medium)] = packet
+            file_name = f"{self.cnt_medium:08d}.json"
+            out_path = self.output_dir_medium / file_name
+            with open(out_path, 'w') as f:
+                json.dump(packet, f, indent=2)
             self.cnt_medium += 1
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Stereo Dataset Generator")
     parser.add_argument("--source", type=str, required=True, help="Pfad zu den Videos")
-    parser.add_argument("--out_small", type=str, default="dataset_small.json", help="Output Pfad Small (JSON)")
-    parser.add_argument("--out_medium", type=str, default="dataset_medium.json", help="Output Pfad Medium (JSON)")
+    parser.add_argument("--out_small", type=str, default="dataset_small_cache", help="Output Verzeichnis Small (Ordner)")
+    parser.add_argument("--out_medium", type=str, default="dataset_medium_cache", help="Output Verzeichnis Medium (Ordner)")
     
     args = parser.parse_args()
     
