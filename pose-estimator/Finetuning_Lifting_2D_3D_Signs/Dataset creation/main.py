@@ -88,7 +88,14 @@ class DatasetGenerator:
         """
         
         # A. 3D Extraction (Using Stereo Frame)
-        results_3d = self.lifter.extract_frame(frame)
+        try:
+            results_3d = self.lifter.extract_frame(frame)
+        except ZeroDivisionError:
+             return None
+        except Exception as e:
+             print(f"Frame processing error: {e}")
+             return None
+             
         if not results_3d:
             # Wenn 3D fehlschlägt, geben wir meist auch nichts zurück, 
             # da das Dataset Lifting trainieren soll.
@@ -115,6 +122,20 @@ class DatasetGenerator:
 
         kps_left = get_kps(res_left)
         kps_right = get_kps(res_right)
+        
+        # Helper for scores
+        def get_scores(res):
+            if res and res.num_persons > 0:
+                if isinstance(res, dict):
+                    return res.get('scores') or res.get('keypoint_scores')
+                elif hasattr(res, 'scores'):
+                    return res.scores
+                elif hasattr(res, 'keypoint_scores'):
+                    return res.keypoint_scores
+            return None
+
+        scores_left = get_scores(res_left)
+        scores_right = get_scores(res_right)
 
         # Build Output Dictionaries
         kp2d_dict = {}
@@ -122,9 +143,14 @@ class DatasetGenerator:
         
         # 1. Calculate 2D Mean
         if kps_left is not None and kps_right is not None:
-             # Assuming shapes match (usually 1, 133, 2)
-             # If lengths differ, take minimum? Usually standard model has fixed size.
-             n_points = min(len(kps_left), len(kps_right))
+             # kps_left shape is (N_people, N_joints, 2). N_people=1 usually.
+             
+             # Determine number of joints. Use shape[1] if available.
+             if hasattr(kps_left, 'shape') and len(kps_left.shape) >= 2:
+                 n_points = kps_left.shape[1]
+             else:
+                 n_points = len(kps_left[0])
+
              for i in range(n_points):
                  x_avg = (kps_left[0][i][0] + kps_right[0][i][0]) / 2.0
                  y_avg = (kps_left[0][i][1] + kps_right[0][i][1]) / 2.0
@@ -132,12 +158,12 @@ class DatasetGenerator:
                  
         elif kps_left is not None:
              # Fallback Left
-             for i, p in enumerate(kps_left):
+             for i, p in enumerate(kps_left[0]):
                  kp2d_dict[str(i)] = {"x": float(p[0]), "y": float(p[1])}
                  
         elif kps_right is not None:
              # Fallback Right
-             for i, p in enumerate(kps_right):
+             for i, p in enumerate(kps_right[0]):
                  kp2d_dict[str(i)] = {"x": float(p[0]), "y": float(p[1])}
         else:
             # Kein 2D gefunden -> Skip Frame
@@ -158,12 +184,31 @@ class DatasetGenerator:
 
         conf_array = np.zeros(max_id + 1)
         
-        # Prefer 3D confidence (merged)
-        #for p in results_3d:
-        #     if hasattr(p, 'confidence'):
-        #        conf_array[p.get_data()["id"]] = float(p.get_data()["confidence"])
-        #     elif conf_2d_person is not None and len(conf_2d_person) > p.get_data()["id"]:
-        #        conf_array[p.get_data()["id"]] = float(conf_2d_person[p.get_data()["id"]])
+        # Prefer 3D confidence (merged), fallback to 2D
+        
+        # 3D
+        for p in results_3d:
+             data = p.get_data()
+             if "confidence" in data:
+                 idx = data["id"]
+                 if idx < len(conf_array):
+                     conf_array[idx] = float(data["confidence"])
+        
+        # Fallback 2D if 0
+        if scores_left is not None:
+            # scores_left shape usually (1, 133)
+            # Flatten or access first person
+            s_left = scores_left[0] if len(scores_left.shape) > 1 else scores_left
+            for i in range(min(len(s_left), len(conf_array))):
+                if conf_array[i] == 0:
+                    conf_array[i] = float(s_left[i])
+        
+        # Fallback 2D right if still 0 and left was not available or had 0
+        if scores_right is not None:
+            s_right = scores_right[0] if len(scores_right.shape) > 1 else scores_right
+            for i in range(min(len(s_right), len(conf_array))):
+                if conf_array[i] == 0:
+                    conf_array[i] = float(s_right[i])
 
         # print("1 frame ready") # Spam reduce
                 
@@ -175,7 +220,7 @@ class DatasetGenerator:
         }
 
     def run(self, target_small=25000, target_medium=50000):
-        existing_frames = self._check_video_and_frameid()
+
         video_files = self.scan_videos()
         total_frames_all_videos, video_frames_map = self.count_total_frames(video_files)
         
