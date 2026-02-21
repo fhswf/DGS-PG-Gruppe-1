@@ -258,44 +258,48 @@ class DatasetGenerator:
         existing_frames = self._check_video_and_frameid()
 
         for video_path in video_files:
-            cap = cv2.VideoCapture(str(video_path))
-            n_frames = video_frames_map[video_path]
+            try:
+                cap = cv2.VideoCapture(str(video_path))
+                n_frames = video_frames_map[video_path]
             
-            pbar = tqdm(total=n_frames, desc=f"Verarbeite {video_path.name}")
+                pbar = tqdm(total=n_frames, desc=f"Verarbeite {video_path.name}")
             
-            for f_idx in range(n_frames):
-                ret, frame = cap.read()
-                if not ret:
-                    break
+                for f_idx in range(n_frames):
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
                 
-                # Check ob wir diesen Frame für eines der Datasets brauchen
-                need_for_small = (global_frame_counter % step_small == 0)
-                need_for_medium = (global_frame_counter % step_medium == 0)
+                    # Check ob wir diesen Frame für eines der Datasets brauchen
+                    need_for_small = (global_frame_counter % step_small == 0)
+                    need_for_medium = (global_frame_counter % step_medium == 0)
                 
-                if need_for_small or need_for_medium:
-                    # Check if already processed
-                    if (video_path.name, global_frame_counter) in existing_frames:
-                        global_frame_counter += 1
-                        pbar.update(1)
-                        continue
+                    if need_for_small or need_for_medium:
+                        # Check if already processed
+                        if (video_path.name, global_frame_counter) in existing_frames:
+                            global_frame_counter += 1
+                            pbar.update(1)
+                            continue
 
-                    result = self.process_frame(frame)
+                        result = self.process_frame(frame)
                     
-                    if result:
-                        # Qualitätsprüfung
-                        if np.mean(result['confidence']) < 0.5:
-                            # Skip schlechte Frames
-                            pass 
-                        else:
-                            # Speichern
-                            self._save_result(result, global_frame_counter, need_for_small, need_for_medium, video_path.name)
-                            processed_count += 1
+                        if result:
+                            # Qualitätsprüfung
+                            if np.mean(result['confidence']) < 0.5:
+                                # Skip schlechte Frames
+                                pass 
+                            else:
+                                # Speichern
+                                self._save_result(result, global_frame_counter, need_for_small, need_for_medium, video_path.name)
+                                processed_count += 1
                 
-                global_frame_counter += 1
-                pbar.update(1)
+                    global_frame_counter += 1
+                    pbar.update(1)
             
-            pbar.close()
-            cap.release()
+                pbar.close()
+                cap.release()
+
+            except:
+                print(f'Failed to read file {video_path}')
             
         print(f"Fertig! Verarbeitete Samples (gesamt verarbeitet): {processed_count}")
         print(f"Gespeicherte Samples Small: {self.cnt_small}")
