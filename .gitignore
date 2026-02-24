@@ -10,3 +10,4 @@ lifting/*.json
 pose-estimator/poses_2d.json
 pose-estimator/poses_3d.json
 pose-estimator/Finetuning_Lifting_2D_3D_Signs/Dataset creation/*_cache/*.json
+pose-estimator/Finetuning_Lifting_2D_3D_Signs/Dataset creation/*.json

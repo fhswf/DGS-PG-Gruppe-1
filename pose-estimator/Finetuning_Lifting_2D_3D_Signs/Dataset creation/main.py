@@ -23,11 +23,13 @@ class DatasetGenerator:
         self.source_dir = Path(source_dir)
         self.output_dir_small = Path(output_dir_small)
         self.output_dir_medium = Path(output_dir_medium)
+        self.output_dir_full = Path(output_dir_full) if output_dir_full else None
         self.baseline = baseline_m
         
         # Internal counters for naming files
         self.cnt_small = 0
         self.cnt_medium = 0
+        self.cnt_full = 0
         
         # Constants from user
         self.CX_LEFT = 640
@@ -250,9 +252,13 @@ class DatasetGenerator:
         # Ensure output directories exist
         self.output_dir_small.mkdir(parents=True, exist_ok=True)
         self.output_dir_medium.mkdir(parents=True, exist_ok=True)
+        if self.output_dir_full:
+            self.output_dir_full.mkdir(parents=True, exist_ok=True)
         
         print(f"Output Directory Small: {self.output_dir_small}")
         print(f"Output Directory Medium: {self.output_dir_medium}")
+        if self.output_dir_full:
+            print(f"Output Directory Full: {self.output_dir_full}")
         
         # Check for existing frames to resume
         existing_frames = self._check_video_and_frameid()
@@ -272,8 +278,9 @@ class DatasetGenerator:
                     # Check ob wir diesen Frame für eines der Datasets brauchen
                     need_for_small = (global_frame_counter % step_small == 0)
                     need_for_medium = (global_frame_counter % step_medium == 0)
+                    need_for_full = (self.output_dir_full is not None) # Save all to full
                 
-                    if need_for_small or need_for_medium:
+                    if need_for_small or need_for_medium or need_for_full:
                         # Check if already processed
                         if (video_path.name, global_frame_counter) in existing_frames:
                             global_frame_counter += 1
@@ -289,7 +296,7 @@ class DatasetGenerator:
                                 pass 
                             else:
                                 # Speichern
-                                self._save_result(result, global_frame_counter, need_for_small, need_for_medium, video_path.name)
+                                self._save_result(result, global_frame_counter, need_for_small, need_for_medium, need_for_full, video_path.name)
                                 processed_count += 1
                 
                     global_frame_counter += 1
@@ -304,6 +311,8 @@ class DatasetGenerator:
         print(f"Fertig! Verarbeitete Samples (gesamt verarbeitet): {processed_count}")
         print(f"Gespeicherte Samples Small: {self.cnt_small}")
         print(f"Gespeicherte Samples Medium: {self.cnt_medium}")
+        if self.output_dir_full:
+            print(f"Gespeicherte Samples Full: {self.cnt_full}")
 
     def _check_video_and_frameid(self):
         """
@@ -359,7 +368,9 @@ class DatasetGenerator:
 
         scan_dir(self.output_dir_small, is_small=True)
         scan_dir(self.output_dir_medium, is_small=False)
-        
+        if self.output_dir_full:
+            scan_dir(self.output_dir_full, is_small=False) # Reuse False or update logic
+
         print(f"Bereits verarbeitet: {len(processed_frames)} eindeutige Frames (aus Small & Medium).")
         print(f"Fortfahren bei Index Small: {self.cnt_small}")
         print(f"Fortfahren bei Index Medium: {self.cnt_medium}")
@@ -368,7 +379,7 @@ class DatasetGenerator:
          
 
 
-    def _save_result(self, result, frame_id, save_small, save_medium, source_video):
+    def _save_result(self, result, frame_id, save_small, save_medium, save_full, source_video):
         # Result is already in dict format from process_frame
         
         packet = {
@@ -402,13 +413,21 @@ class DatasetGenerator:
                 json.dump(packet, f, indent=2)
             self.cnt_medium += 1
 
+        if save_full and self.output_dir_full:
+            file_name = f"{self.cnt_full:08d}.json"
+            out_path = self.output_dir_full / file_name
+            with open(out_path, 'w') as f:
+                json.dump(packet, f, indent=2)
+            self.cnt_full += 1
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Stereo Dataset Generator")
     parser.add_argument("--source", type=str, required=True, help="Pfad zu den Videos")
     parser.add_argument("--out_small", type=str, default="dataset_small_cache", help="Output Verzeichnis Small (Ordner)")
     parser.add_argument("--out_medium", type=str, default="dataset_medium_cache", help="Output Verzeichnis Medium (Ordner)")
+    parser.add_argument("--out_full", type=str, default=None, help="Output Verzeichnis Full (Ordner, optional)")
     
     args = parser.parse_args()
     
-    generator = DatasetGenerator(args.source, args.out_small, args.out_medium)
+    generator = DatasetGenerator(args.source, args.out_small, args.out_medium, args.out_full)
     generator.run()
