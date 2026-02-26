@@ -121,15 +121,32 @@ def train_model(train_data, test_data, output_dir, pretrained_model=None, epochs
     # Modell initialisieren
     model=model_A_simple_yet_effective_baseline_for_3d_human_pose_estimation(num_keypoints=num_keypoints).to(device)
 
+    # Loss-Funktion
+    criterion=nn.MSELoss()
+
     # Falls vortrainiertes Modell existiert, laden
     if pretrained_model is not None and os.path.exists(pretrained_model):
         model.load_state_dict(torch.load(pretrained_model, map_location=device))
         print(f'Pretrained weights loaded successfully from {pretrained_model}')
+        
+        # Teste das vortrainierte Modell vor dem Training
+        print("\nEvaluating pretrained model on test data before fine-tuning...")
+        model.eval()
+        pre_test_loss = 0
+        with torch.no_grad():
+            for inputs_2d, targets_3d in test_dataloader:
+                inputs_2d = inputs_2d.to(device)
+                targets_3d = targets_3d.to(device)
+                outputs_3d = model(inputs_2d)
+                loss = criterion(outputs_3d, targets_3d)
+                pre_test_loss += loss.item() * inputs_2d.size(0)
+        avg_pre_test_loss = pre_test_loss / len(test_dataset)
+        print(f'Pre-Finetuning Test Loss: {avg_pre_test_loss:.6f}\n')
+
     elif pretrained_model is not None:
         print(f'Warning: Pretrained model file {pretrained_model} not found.')
 
-    # Loss-Funktion und Optimizer
-    criterion=nn.MSELoss()
+    # Optimizer
     optimizer=optim.Adam(model.parameters(), lr=learning_rate)
 
     # Learning Rate Scheduler
